@@ -9,47 +9,168 @@ const DemandTransferInterface = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [transfers, setTransfers] = useState({});
   const [isProcessed, setIsProcessed] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Handle file upload
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    console.log('File selected:', file);
+    
+    if (!file) {
+      console.log('No file selected');
+      return;
+    }
+    
+    console.log('File details:', {
+      name: file.name,
+      size: file.size,
+      type: file.type
+    });
+    
+    // Check file type
+    if (!file.name.toLowerCase().endsWith('.xlsx') && !file.name.toLowerCase().endsWith('.xls')) {
+      alert('Please select an Excel file (.xlsx or .xls)');
+      return;
+    }
+    
+    loadData(file);
+  };
 
   // Load and process data
-  const loadData = async () => {
+  const loadData = async (file) => {
+    console.log('Starting to load data...');
+    setIsLoading(true);
+    
     try {
-      const response = await window.fs.readFile('Total Open Demand RRP1.xlsx');
-      const XLSX = await import('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
-      const workbook = XLSX.read(response, { cellStyles: true, cellFormulas: true, cellDates: true });
-      const worksheet = workbook.Sheets['Open Fcst'];
-      const data = XLSX.utils.sheet_to_json(worksheet);
+      console.log('Reading file as array buffer...');
+      const arrayBuffer = await file.arrayBuffer();
+      console.log('Array buffer size:', arrayBuffer.byteLength);
       
-      setRawData(data);
-      processMultiVariantDFUs(data);
-      setIsProcessed(true);
+      console.log('Loading XLSX from CDN...');
+      // Load XLSX from CDN
+      if (!window.XLSX) {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        document.head.appendChild(script);
+        
+        await new Promise((resolve, reject) => {
+          script.onload = resolve;
+          script.onerror = reject;
+        });
+      }
+      
+      console.log('XLSX loaded successfully');
+      
+      console.log('Reading workbook...');
+      const workbook = window.XLSX.read(arrayBuffer, { 
+        cellStyles: true, 
+        cellFormulas: true, 
+        cellDates: true,
+        cellNF: true,
+        sheetStubs: true
+      });
+      
+      console.log('Available sheets:', workbook.SheetNames);
+      
+      // Try to find the correct sheet
+      let sheetName = 'Open Fcst';
+      if (!workbook.Sheets[sheetName]) {
+        sheetName = workbook.SheetNames[0]; // Use first sheet if 'Open Fcst' doesn't exist
+        console.log('Using first sheet:', sheetName);
+      }
+      
+      const worksheet = workbook.Sheets[sheetName];
+      console.log('Converting sheet to JSON...');
+      
+      const data = window.XLSX.utils.sheet_to_json(worksheet);
+      
+      console.log('Data conversion complete');
+      console.log('Loaded data:', data.length, 'records');
+      
+      if (data.length > 0) {
+        console.log('Sample record:', data[0]);
+        setRawData(data);
+        processMultiVariantDFUs(data);
+        setIsProcessed(true);
+      } else {
+        alert('No data found in the Excel file');
+      }
+      
     } catch (error) {
       console.error('Error loading data:', error);
+      console.error('Error stack:', error.stack);
+      alert('Error loading data: ' + error.message);
+    } finally {
+      console.log('Setting loading to false');
+      setIsLoading(false);
     }
   };
 
   const processMultiVariantDFUs = (data) => {
+    console.log('Processing data:', data.length, 'records');
+    
+    if (data.length === 0) {
+      alert('No data found in the file');
+      return;
+    }
+    
+    // Check the column structure
+    const sampleRecord = data[0];
+    console.log('Sample record:', sampleRecord);
+    console.log('Available columns:', Object.keys(sampleRecord));
+    
+    // Try to identify the correct column names
+    const columns = Object.keys(sampleRecord);
+    const dfuColumn = columns.find(col => col.toLowerCase().includes('dfu')) || 'DFU';
+    const partNumberColumn = columns.find(col => 
+      col.toLowerCase().includes('product') || 
+      col.toLowerCase().includes('part')
+    ) || 'Product Number';
+    const demandColumn = columns.find(col => 
+      col.toLowerCase().includes('fcst') || 
+      col.toLowerCase().includes('demand')
+    ) || 'weekly fcst';
+    
+    console.log('Using columns:', { dfuColumn, partNumberColumn, demandColumn });
+    
+    // Check if we have the required columns
+    if (!sampleRecord[dfuColumn] || !sampleRecord[partNumberColumn] || !sampleRecord[demandColumn]) {
+      alert(`Could not find required columns. Found: ${Object.keys(sampleRecord).join(', ')}`);
+      return;
+    }
+    
     const groupedByDFU = {};
     
     // Group by DFU
     data.forEach(record => {
-      const dfuCode = record.DFU;
-      if (!groupedByDFU[dfuCode]) {
-        groupedByDFU[dfuCode] = [];
+      const dfuCode = record[dfuColumn];
+      if (dfuCode) {
+        if (!groupedByDFU[dfuCode]) {
+          groupedByDFU[dfuCode] = [];
+        }
+        groupedByDFU[dfuCode].push(record);
       }
-      groupedByDFU[dfuCode].push(record);
     });
+
+    console.log('Grouped by DFU:', Object.keys(groupedByDFU).length, 'unique DFUs');
 
     // Find DFU codes with multiple variants
     const multiVariants = {};
+    let multiVariantCount = 0;
+    
     Object.keys(groupedByDFU).forEach(dfuCode => {
       const records = groupedByDFU[dfuCode];
-      const uniquePartCodes = [...new Set(records.map(r => r['Product Number']))];
+      const uniquePartCodes = [...new Set(records.map(r => r[partNumberColumn]))].filter(Boolean);
       
       if (uniquePartCodes.length > 1) {
+        multiVariantCount++;
         const variantDemand = {};
         uniquePartCodes.forEach(partCode => {
-          const partCodeRecords = records.filter(r => r['Product Number'] === partCode);
-          const totalDemand = partCodeRecords.reduce((sum, r) => sum + (r['weekly fcst'] || 0), 0);
+          const partCodeRecords = records.filter(r => r[partNumberColumn] === partCode);
+          const totalDemand = partCodeRecords.reduce((sum, r) => {
+            const demand = parseFloat(r[demandColumn]) || 0;
+            return sum + demand;
+          }, 0);
           variantDemand[partCode] = {
             totalDemand,
             recordCount: partCodeRecords.length,
@@ -60,13 +181,23 @@ const DemandTransferInterface = () => {
         multiVariants[dfuCode] = {
           variants: uniquePartCodes,
           variantDemand,
-          totalRecords: records.length
+          totalRecords: records.length,
+          dfuColumn,
+          partNumberColumn,
+          demandColumn
         };
       }
     });
 
+    console.log('Multi-variant DFUs found:', multiVariantCount);
+    console.log('Sample multi-variant DFU:', Object.keys(multiVariants)[0], multiVariants[Object.keys(multiVariants)[0]]);
+
     setMultiVariantDFUs(multiVariants);
     setFilteredDFUs(multiVariants);
+    
+    if (multiVariantCount === 0) {
+      alert('No DFU codes with multiple variants found in the data');
+    }
   };
 
   // Filter DFUs based on search term
@@ -98,27 +229,34 @@ const DemandTransferInterface = () => {
     if (!targetVariant) return;
 
     const dfuData = multiVariantDFUs[dfuCode];
+    const { dfuColumn, partNumberColumn, demandColumn } = dfuData;
+    
     const updatedData = [...rawData];
     
     // Find all records for this DFU
-    const dfuRecords = updatedData.filter(record => record.DFU === dfuCode);
+    const dfuRecords = updatedData.filter(record => record[dfuColumn] === dfuCode);
+    
+    console.log(`Executing transfer for DFU ${dfuCode} to variant ${targetVariant}`);
+    console.log(`Found ${dfuRecords.length} records for this DFU`);
     
     // Update records to transfer demand to target variant
     dfuRecords.forEach(record => {
-      if (record['Product Number'] !== targetVariant) {
+      if (record[partNumberColumn] !== targetVariant) {
         // Find corresponding record with target variant or create new one
         const targetRecord = dfuRecords.find(r => 
-          r['Product Number'] === targetVariant && 
+          r[partNumberColumn] === targetVariant && 
           r['Calendar.week'] === record['Calendar.week'] &&
           r['Source Location'] === record['Source Location']
         );
         
         if (targetRecord) {
-          targetRecord['weekly fcst'] += record['weekly fcst'];
-          record['weekly fcst'] = 0; // Zero out the old variant
+          const oldDemand = parseFloat(targetRecord[demandColumn]) || 0;
+          const transferDemand = parseFloat(record[demandColumn]) || 0;
+          targetRecord[demandColumn] = oldDemand + transferDemand;
+          record[demandColumn] = 0; // Zero out the old variant
         } else {
           // Create new record for target variant
-          record['Product Number'] = targetVariant;
+          record[partNumberColumn] = targetVariant;
         }
       }
     });
@@ -132,14 +270,25 @@ const DemandTransferInterface = () => {
       delete newTransfers[dfuCode];
       return newTransfers;
     });
+    
+    alert(`Transfer completed for DFU ${dfuCode}`);
   };
 
-  const exportData = () => {
-    const XLSX = require('xlsx');
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rawData);
-    XLSX.utils.book_append_sheet(wb, ws, 'Updated Demand');
-    XLSX.writeFile(wb, 'Updated_Demand_Data.xlsx');
+  const exportData = async () => {
+    try {
+      if (!window.XLSX) {
+        alert('XLSX library not loaded. Please reload the page and try again.');
+        return;
+      }
+      
+      const wb = window.XLSX.utils.book_new();
+      const ws = window.XLSX.utils.json_to_sheet(rawData);
+      window.XLSX.utils.book_append_sheet(wb, ws, 'Updated Demand');
+      window.XLSX.writeFile(wb, 'Updated_Demand_Data.xlsx');
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      alert('Error exporting data: ' + error.message);
+    }
   };
 
   const formatNumber = (num) => {
@@ -152,14 +301,41 @@ const DemandTransferInterface = () => {
         <div className="text-center py-12">
           <div className="bg-blue-50 rounded-lg p-8 inline-block">
             <Upload className="w-12 h-12 mx-auto mb-4 text-blue-600" />
-            <h2 className="text-xl font-semibold mb-2">Load Demand Data</h2>
-            <p className="text-gray-600 mb-4">Click to load and process your demand data file</p>
-            <button 
-              onClick={loadData}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Load Data
-            </button>
+            <h2 className="text-xl font-semibold mb-2">Upload Demand Data</h2>
+            <p className="text-gray-600 mb-4">
+              Upload your Excel file containing demand data with DFU codes and part codes
+            </p>
+            
+            {isLoading ? (
+              <div className="text-blue-600">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <p>Processing file...</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleFileUpload}
+                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  />
+                  <p className="text-sm text-gray-500 mt-2">
+                    Supported formats: .xlsx, .xls
+                  </p>
+                </div>
+                
+                <div className="text-left text-sm text-gray-600 bg-gray-50 p-4 rounded-lg">
+                  <p className="font-medium mb-2">Expected file structure:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>DFU column (containing DFU codes)</li>
+                    <li>Product Number column (containing part codes)</li>
+                    <li>Demand column (weekly forecast or demand values)</li>
+                    <li>Calendar week and Source Location columns</li>
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -236,7 +412,7 @@ const DemandTransferInterface = () => {
         </div>
 
         <div className="bg-white border border-gray-200 rounded-lg p-4">
-          {selectedDFU ? (
+          {selectedDFU && multiVariantDFUs[selectedDFU] ? (
             <div>
               <h3 className="font-semibold text-gray-800 mb-4">
                 DFU: {selectedDFU} - Variant Details
@@ -262,12 +438,12 @@ const DemandTransferInterface = () => {
                             Part: {variant}
                           </h4>
                           <p className="text-sm text-gray-600">
-                            {demandData.recordCount} records
+                            {demandData?.recordCount || 0} records
                           </p>
                         </div>
                         <div className="text-right">
                           <p className="font-medium text-gray-800">
-                            {formatNumber(demandData.totalDemand)}
+                            {formatNumber(demandData?.totalDemand || 0)}
                           </p>
                           <p className="text-sm text-gray-600">demand</p>
                         </div>
