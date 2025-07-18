@@ -1,0 +1,13 @@
+{
+  "name": "dfu-demand-transfer",
+  "version": "1.0.0",
+  "description": "DFU Demand Transfer Management Tool",
+  "main": "index.html",
+  "scripts": {
+    "start": "python -m http.server 8000",
+    "build": "echo 'No build step required for static site'"
+  },
+  "keywords": ["demand", "transfer", "dfu", "excel", "management"],
+  "author": "Your Name",
+  "license": "MIT"
+}
