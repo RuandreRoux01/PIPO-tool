@@ -1,0 +1,329 @@
+import React, { useState, useEffect } from 'react';
+import { Upload, Download, Search, AlertTriangle, CheckCircle, X, ArrowRight } from 'lucide-react';
+
+const DemandTransferInterface = () => {
+  const [rawData, setRawData] = useState([]);
+  const [multiVariantDFUs, setMultiVariantDFUs] = useState({});
+  const [filteredDFUs, setFilteredDFUs] = useState({});
+  const [selectedDFU, setSelectedDFU] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [transfers, setTransfers] = useState({});
+  const [isProcessed, setIsProcessed] = useState(false);
+
+  // Load and process data
+  const loadData = async () => {
+    try {
+      const response = await window.fs.readFile('Total Open Demand RRP1.xlsx');
+      const XLSX = await import('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+      const workbook = XLSX.read(response, { cellStyles: true, cellFormulas: true, cellDates: true });
+      const worksheet = workbook.Sheets['Open Fcst'];
+      const data = XLSX.utils.sheet_to_json(worksheet);
+      
+      setRawData(data);
+      processMultiVariantDFUs(data);
+      setIsProcessed(true);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    }
+  };
+
+  const processMultiVariantDFUs = (data) => {
+    const groupedByDFU = {};
+    
+    // Group by DFU
+    data.forEach(record => {
+      const dfuCode = record.DFU;
+      if (!groupedByDFU[dfuCode]) {
+        groupedByDFU[dfuCode] = [];
+      }
+      groupedByDFU[dfuCode].push(record);
+    });
+
+    // Find DFU codes with multiple variants
+    const multiVariants = {};
+    Object.keys(groupedByDFU).forEach(dfuCode => {
+      const records = groupedByDFU[dfuCode];
+      const uniquePartCodes = [...new Set(records.map(r => r['Product Number']))];
+      
+      if (uniquePartCodes.length > 1) {
+        const variantDemand = {};
+        uniquePartCodes.forEach(partCode => {
+          const partCodeRecords = records.filter(r => r['Product Number'] === partCode);
+          const totalDemand = partCodeRecords.reduce((sum, r) => sum + (r['weekly fcst'] || 0), 0);
+          variantDemand[partCode] = {
+            totalDemand,
+            recordCount: partCodeRecords.length,
+            records: partCodeRecords
+          };
+        });
+        
+        multiVariants[dfuCode] = {
+          variants: uniquePartCodes,
+          variantDemand,
+          totalRecords: records.length
+        };
+      }
+    });
+
+    setMultiVariantDFUs(multiVariants);
+    setFilteredDFUs(multiVariants);
+  };
+
+  // Filter DFUs based on search term
+  useEffect(() => {
+    if (searchTerm) {
+      const filtered = {};
+      Object.keys(multiVariantDFUs).forEach(dfuCode => {
+        if (dfuCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            multiVariantDFUs[dfuCode].variants.some(v => 
+              v.toString().toLowerCase().includes(searchTerm.toLowerCase()))) {
+          filtered[dfuCode] = multiVariantDFUs[dfuCode];
+        }
+      });
+      setFilteredDFUs(filtered);
+    } else {
+      setFilteredDFUs(multiVariantDFUs);
+    }
+  }, [searchTerm, multiVariantDFUs]);
+
+  const handleTransferSelection = (dfuCode, targetVariant) => {
+    setTransfers(prev => ({
+      ...prev,
+      [dfuCode]: targetVariant
+    }));
+  };
+
+  const executeTransfer = (dfuCode) => {
+    const targetVariant = transfers[dfuCode];
+    if (!targetVariant) return;
+
+    const dfuData = multiVariantDFUs[dfuCode];
+    const updatedData = [...rawData];
+    
+    // Find all records for this DFU
+    const dfuRecords = updatedData.filter(record => record.DFU === dfuCode);
+    
+    // Update records to transfer demand to target variant
+    dfuRecords.forEach(record => {
+      if (record['Product Number'] !== targetVariant) {
+        // Find corresponding record with target variant or create new one
+        const targetRecord = dfuRecords.find(r => 
+          r['Product Number'] === targetVariant && 
+          r['Calendar.week'] === record['Calendar.week'] &&
+          r['Source Location'] === record['Source Location']
+        );
+        
+        if (targetRecord) {
+          targetRecord['weekly fcst'] += record['weekly fcst'];
+          record['weekly fcst'] = 0; // Zero out the old variant
+        } else {
+          // Create new record for target variant
+          record['Product Number'] = targetVariant;
+        }
+      }
+    });
+
+    setRawData(updatedData);
+    processMultiVariantDFUs(updatedData);
+    
+    // Remove from transfers
+    setTransfers(prev => {
+      const newTransfers = { ...prev };
+      delete newTransfers[dfuCode];
+      return newTransfers;
+    });
+  };
+
+  const exportData = () => {
+    const XLSX = require('xlsx');
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rawData);
+    XLSX.utils.book_append_sheet(wb, ws, 'Updated Demand');
+    XLSX.writeFile(wb, 'Updated_Demand_Data.xlsx');
+  };
+
+  const formatNumber = (num) => {
+    return new Intl.NumberFormat().format(num);
+  };
+
+  if (!isProcessed) {
+    return (
+      <div className="max-w-6xl mx-auto p-6 bg-white">
+        <div className="text-center py-12">
+          <div className="bg-blue-50 rounded-lg p-8 inline-block">
+            <Upload className="w-12 h-12 mx-auto mb-4 text-blue-600" />
+            <h2 className="text-xl font-semibold mb-2">Load Demand Data</h2>
+            <p className="text-gray-600 mb-4">Click to load and process your demand data file</p>
+            <button 
+              onClick={loadData}
+              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Load Data
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-6xl mx-auto p-6 bg-white">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-800 mb-2">DFU Demand Transfer Management</h1>
+        <p className="text-gray-600">
+          Manage demand transfers for DFU codes with multiple variants. Found {Object.keys(multiVariantDFUs).length} DFUs with multiple variants.
+        </p>
+      </div>
+
+      <div className="flex gap-4 mb-6">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search DFU codes or part codes..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+        <button 
+          onClick={exportData}
+          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+        >
+          <Download className="w-4 h-4" />
+          Export Updated Data
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-gray-50 rounded-lg p-4">
+          <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+            DFUs Requiring Review ({Object.keys(filteredDFUs).length})
+          </h3>
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {Object.keys(filteredDFUs).map(dfuCode => (
+              <div 
+                key={dfuCode}
+                className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                  selectedDFU === dfuCode 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+                onClick={() => setSelectedDFU(dfuCode)}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-medium text-gray-800">DFU: {dfuCode}</h4>
+                    <p className="text-sm text-gray-600">
+                      {filteredDFUs[dfuCode].variants.length} variants
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    {transfers[dfuCode] ? (
+                      <span className="inline-flex items-center gap-1 text-green-600 text-sm">
+                        <CheckCircle className="w-4 h-4" />
+                        Ready
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 text-sm">Pending</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          {selectedDFU ? (
+            <div>
+              <h3 className="font-semibold text-gray-800 mb-4">
+                DFU: {selectedDFU} - Variant Details
+              </h3>
+              <div className="space-y-3">
+                {multiVariantDFUs[selectedDFU].variants.map(variant => {
+                  const demandData = multiVariantDFUs[selectedDFU].variantDemand[variant];
+                  const isSelected = transfers[selectedDFU] === variant;
+                  
+                  return (
+                    <div 
+                      key={variant}
+                      className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                        isSelected 
+                          ? 'border-green-500 bg-green-50' 
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      onClick={() => handleTransferSelection(selectedDFU, variant)}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h4 className="font-medium text-gray-800">
+                            Part: {variant}
+                          </h4>
+                          <p className="text-sm text-gray-600">
+                            {demandData.recordCount} records
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium text-gray-800">
+                            {formatNumber(demandData.totalDemand)}
+                          </p>
+                          <p className="text-sm text-gray-600">demand</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {transfers[selectedDFU] && (
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-blue-800 mb-3">
+                    Transfer all demand to variant: <strong>{transfers[selectedDFU]}</strong>
+                  </p>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => executeTransfer(selectedDFU)}
+                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      Execute Transfer
+                    </button>
+                    <button 
+                      onClick={() => setTransfers(prev => {
+                        const newTransfers = { ...prev };
+                        delete newTransfers[selectedDFU];
+                        return newTransfers;
+                      })}
+                      className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors flex items-center gap-2"
+                    >
+                      <X className="w-4 h-4" />
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              Select a DFU from the list to view variant details
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-6 bg-blue-50 rounded-lg p-4">
+        <h3 className="font-semibold text-blue-800 mb-2">How to Use</h3>
+        <ul className="text-sm text-blue-700 space-y-1">
+          <li>1. Select a DFU code from the left panel to view its variants</li>
+          <li>2. Click on the variant you want to consolidate demand to</li>
+          <li>3. Click "Execute Transfer" to move all demand to the selected variant</li>
+          <li>4. Export the updated data when you're done with all transfers</li>
+        </ul>
+      </div>
+    </div>
+  );
+};
+
+export default DemandTransferInterface;
