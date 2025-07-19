@@ -261,6 +261,9 @@ class DemandTransferApp {
             const targetVariant = this.bulkTransfers[dfuCode];
             const dfuRecords = this.rawData.filter(record => record[dfuColumn] === dfuCode);
             
+            console.log(`Executing bulk transfer for DFU ${dfuCode} to ${targetVariant}`);
+            console.log(`Found ${dfuRecords.length} records for this DFU`);
+            
             dfuRecords.forEach(record => {
                 if (record[partNumberColumn] !== targetVariant) {
                     const targetRecord = dfuRecords.find(r => 
@@ -291,26 +294,45 @@ class DemandTransferApp {
             const individualTransfers = this.transfers[dfuCode];
             const dfuRecords = this.rawData.filter(record => record[dfuColumn] === dfuCode);
             
+            console.log(`Executing individual transfers for DFU ${dfuCode}`);
+            console.log(`Individual transfers:`, individualTransfers);
+            console.log(`Found ${dfuRecords.length} records for this DFU`);
+            
+            // Process each individual transfer
             Object.keys(individualTransfers).forEach(sourceVariant => {
                 const targetVariant = individualTransfers[sourceVariant];
                 
+                console.log(`Processing transfer: ${sourceVariant} → ${targetVariant}`);
+                
+                // Only transfer if source and target are different
                 if (sourceVariant !== targetVariant) {
-                    const sourceRecords = dfuRecords.filter(r => r[partNumberColumn] === sourceVariant);
+                    // Find all records for this source variant
+                    const sourceRecords = dfuRecords.filter(r => 
+                        r[partNumberColumn].toString() === sourceVariant.toString()
+                    );
+                    
+                    console.log(`Found ${sourceRecords.length} records for source variant ${sourceVariant}`);
                     
                     sourceRecords.forEach(record => {
+                        // Try to find a matching target record with same week and location
                         const targetRecord = dfuRecords.find(r => 
-                            r[partNumberColumn] === targetVariant && 
+                            r[partNumberColumn].toString() === targetVariant.toString() && 
                             r['Calendar.week'] === record['Calendar.week'] &&
                             r['Source Location'] === record['Source Location']
                         );
                         
+                        const transferDemand = parseFloat(record[demandColumn]) || 0;
+                        
                         if (targetRecord) {
+                            // Add to existing target record
                             const oldDemand = parseFloat(targetRecord[demandColumn]) || 0;
-                            const transferDemand = parseFloat(record[demandColumn]) || 0;
                             targetRecord[demandColumn] = oldDemand + transferDemand;
-                            record[demandColumn] = 0;
+                            record[demandColumn] = 0; // Zero out source
+                            console.log(`Added ${transferDemand} demand to existing target record`);
                         } else {
+                            // Change the source record to target variant
                             record[partNumberColumn] = targetVariant;
+                            console.log(`Changed record part number from ${sourceVariant} to ${targetVariant}`);
                         }
                     });
                     
@@ -322,6 +344,7 @@ class DemandTransferApp {
             this.showNotification(`Individual transfers completed for DFU ${dfuCode}: ${transferCount} variant transfers executed`);
         }
 
+        // Re-process the data to update the interface
         this.processMultiVariantDFUs(this.rawData);
         this.render();
     }
