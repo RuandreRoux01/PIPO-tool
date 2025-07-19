@@ -344,9 +344,26 @@ class DemandTransferApp {
             this.showNotification(`Individual transfers completed for DFU ${dfuCode}: ${transferCount} variant transfers executed`);
         }
 
-        // Re-process the data to update the interface
+        // Force a complete recalculation by clearing cached data first
+        this.multiVariantDFUs = {};
+        this.filteredDFUs = {};
+        
+        // Re-process the data with the updated rawData to refresh the UI
+        console.log('Recalculating variant demands after transfer...');
         this.processMultiVariantDFUs(this.rawData);
+        
+        // Clear the selection to force UI refresh
+        const currentSelection = this.selectedDFU;
+        this.selectedDFU = null;
+        
+        // Re-render and then restore selection
         this.render();
+        
+        // Restore selection after a brief delay to ensure UI updates
+        setTimeout(() => {
+            this.selectedDFU = currentSelection;
+            this.render();
+        }, 100);
     }
     
     cancelTransfer(dfuCode) {
