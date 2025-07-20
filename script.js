@@ -357,20 +357,27 @@ class DemandTransferApp {
         this.processMultiVariantDFUs(this.rawData);
         
         console.log('Step 4: Updating UI...');
-        // Clear the selection to force UI refresh
+        // Force complete UI refresh by clearing selection and re-rendering
         const currentSelection = this.selectedDFU;
         this.selectedDFU = null;
         
-        // Re-render immediately
+        // First render to clear old data
         this.render();
         
-        // Restore selection after ensuring consolidation is complete
+        // Restore selection and render again to show fresh data
         setTimeout(() => {
-            console.log('Step 5: Restoring selection...');
+            console.log('Step 5: Restoring selection with fresh data...');
             this.selectedDFU = currentSelection;
+            
+            // Log the current DFU data to verify it's correct
+            if (this.multiVariantDFUs[currentSelection]) {
+                console.log('Fresh DFU data for UI:', this.multiVariantDFUs[currentSelection]);
+                console.log('Fresh variant demand data:', this.multiVariantDFUs[currentSelection].variantDemand);
+            }
+            
             this.render();
             console.log('Transfer and UI update complete!');
-        }, 200);
+        }, 300); // Slightly longer delay to ensure complete refresh
     }
     
     consolidateRecords(dfuCode) {
