@@ -372,62 +372,85 @@ class DemandTransferApp {
     consolidateRecords(dfuCode) {
         console.log(`Consolidating records for DFU ${dfuCode}`);
         
-        // Get the column information from the first multi-variant DFU (they should all be the same)
-        const sampleDFU = Object.values(this.multiVariantDFUs)[0];
-        if (!sampleDFU) return;
+        // Get the column information from the current DFU data
+        const currentDFUData = Object.values(this.multiVariantDFUs).find(dfu => dfu);
+        if (!currentDFUData) {
+            // Fallback to detecting columns from sample data
+            const sampleRecord = this.rawData[0];
+            const columns = Object.keys(sampleRecord);
+            const dfuColumn = columns.find(col => col.toLowerCase().includes('dfu')) || 'DFU';
+            const partNumberColumn = columns.find(col => 
+                col.toLowerCase().includes('product') || 
+                col.toLowerCase().includes('part')
+            ) || 'Product Number';
+            const demandColumn = columns.find(col => 
+                col.toLowerCase().includes('fcst') || 
+                col.toLowerCase().includes('demand')
+            ) || 'weekly fcst';
+            
+            currentDFUData = { dfuColumn, partNumberColumn, demandColumn };
+        }
         
-        const { dfuColumn, partNumberColumn, demandColumn } = sampleDFU;
+        const { dfuColumn, partNumberColumn, demandColumn } = currentDFUData;
         
         // Get all records for this DFU
-        const dfuRecords = this.rawData.filter(record => record[dfuColumn] === dfuCode);
+        const allRecords = this.rawData;
+        const dfuRecords = allRecords.filter(record => record[dfuColumn] === dfuCode);
         
-        console.log(`Found ${dfuRecords.length} records before consolidation`);
+        console.log(`Found ${dfuRecords.length} records for DFU ${dfuCode} before consolidation`);
         
-        // Group records by part number, calendar week, and source location
-        const consolidationGroups = {};
+        // Create a map of consolidated records
+        const consolidatedMap = new Map();
         
-        dfuRecords.forEach((record, index) => {
-            const key = `${record[partNumberColumn]}_${record['Calendar.week']}_${record['Source Location']}`;
+        dfuRecords.forEach((record) => {
+            const partNumber = record[partNumberColumn].toString();
+            const calendarWeek = record['Calendar.week'];
+            const sourceLocation = record['Source Location'];
+            const demand = parseFloat(record[demandColumn]) || 0;
             
-            if (!consolidationGroups[key]) {
-                consolidationGroups[key] = [];
-            }
-            consolidationGroups[key].push({record, index});
-        });
-        
-        console.log(`Created ${Object.keys(consolidationGroups).length} consolidation groups`);
-        
-        // For each group with multiple records, consolidate them
-        Object.keys(consolidationGroups).forEach(key => {
-            const group = consolidationGroups[key];
+            // Create a unique key for this combination
+            const key = `${partNumber}|${calendarWeek}|${sourceLocation}`;
             
-            if (group.length > 1) {
-                console.log(`Consolidating ${group.length} records for key: ${key}`);
-                
-                // Keep the first record and sum all demands
-                const primaryRecord = group[0].record;
-                let totalDemand = 0;
-                
-                group.forEach(({record}) => {
-                    totalDemand += parseFloat(record[demandColumn]) || 0;
-                });
-                
-                // Update the primary record with total demand
-                primaryRecord[demandColumn] = totalDemand;
-                
-                // Mark other records for removal (set a flag)
-                for (let i = 1; i < group.length; i++) {
-                    group[i].record._REMOVE = true;
-                }
-                
-                console.log(`Consolidated demand: ${totalDemand} for part ${primaryRecord[partNumberColumn]}`);
+            if (consolidatedMap.has(key)) {
+                // Add to existing consolidated record
+                const existing = consolidatedMap.get(key);
+                existing[demandColumn] = (parseFloat(existing[demandColumn]) || 0) + demand;
+                console.log(`Consolidated ${demand} into existing record for ${partNumber}, total now: ${existing[demandColumn]}`);
+            } else {
+                // Create new consolidated record
+                const consolidatedRecord = { ...record };
+                consolidatedRecord[demandColumn] = demand;
+                consolidatedMap.set(key, consolidatedRecord);
             }
         });
         
-        // Remove marked records from rawData
-        this.rawData = this.rawData.filter(record => !record._REMOVE);
+        console.log(`Consolidated into ${consolidatedMap.size} unique records`);
         
-        console.log(`Consolidation complete. Records after: ${this.rawData.filter(record => record[dfuColumn] === dfuCode).length}`);
+        // Remove old DFU records from rawData
+        this.rawData = this.rawData.filter(record => record[dfuColumn] !== dfuCode);
+        
+        // Add consolidated records back to rawData
+        consolidatedMap.forEach((record) => {
+            this.rawData.push(record);
+        });
+        
+        const newDfuRecords = this.rawData.filter(record => record[dfuColumn] === dfuCode);
+        console.log(`After consolidation: ${newDfuRecords.length} records for DFU ${dfuCode}`);
+        
+        // Log the consolidated variants
+        const variantSummary = {};
+        newDfuRecords.forEach(record => {
+            const partNumber = record[partNumberColumn].toString();
+            const demand = parseFloat(record[demandColumn]) || 0;
+            
+            if (!variantSummary[partNumber]) {
+                variantSummary[partNumber] = { totalDemand: 0, recordCount: 0 };
+            }
+            variantSummary[partNumber].totalDemand += demand;
+            variantSummary[partNumber].recordCount += 1;
+        });
+        
+        console.log(`DFU ${dfuCode} variant summary after consolidation:`, variantSummary);
     }
     
     cancelTransfer(dfuCode) {
