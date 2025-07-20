@@ -1,6 +1,6 @@
 // DFU Demand Transfer Management Application
-// Version: 2.2.0 - Build: 2025-07-20-20:50
-// Last Updated: Added completed transfer tracking and "Done" status display
+// Version: 2.3.0 - Build: 2025-07-20-21:00
+// Last Updated: Added Transfer History audit trail column to Excel export
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
@@ -18,7 +18,7 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.2.0 - Build: 2025-07-20-20:50');
+        console.log('🚀 DFU Demand Transfer App v2.3.0 - Build: 2025-07-20-21:00');
         console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
         this.render();
         this.attachEventListeners();
@@ -288,6 +288,15 @@ class DemandTransferApp {
         const { dfuColumn, partNumberColumn, demandColumn } = dfuData;
         
         let transferCount = 0;
+        const transferHistory = []; // Track all transfers for audit trail
+        const timestamp = new Date().toLocaleString('en-GB', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: 'numeric', 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit' 
+        });
         
         // Handle bulk transfer
         if (this.bulkTransfers[dfuCode]) {
@@ -299,6 +308,9 @@ class DemandTransferApp {
             
             dfuRecords.forEach(record => {
                 if (record[partNumberColumn] !== targetVariant) {
+                    const sourceVariant = record[partNumberColumn];
+                    const transferDemand = parseFloat(record[demandColumn]) || 0;
+                    
                     const targetRecord = dfuRecords.find(r => 
                         r[partNumberColumn] === targetVariant && 
                         r['Calendar.week'] === record['Calendar.week'] &&
@@ -307,13 +319,39 @@ class DemandTransferApp {
                     
                     if (targetRecord) {
                         const oldDemand = parseFloat(targetRecord[demandColumn]) || 0;
-                        const transferDemand = parseFloat(record[demandColumn]) || 0;
                         targetRecord[demandColumn] = oldDemand + transferDemand;
+                        
+                        // Add transfer history to target record
+                        const existingHistory = targetRecord['Transfer History'] || '';
+                        const newHistoryEntry = `From: ${sourceVariant}\\${transferDemand}\\${timestamp}`;
+                        targetRecord['Transfer History'] = existingHistory ? 
+                            `${existingHistory}; ${newHistoryEntry}` : newHistoryEntry;
+                        
                         record[demandColumn] = 0;
                         transferCount++;
+                        
+                        transferHistory.push({
+                            from: sourceVariant,
+                            to: targetVariant,
+                            amount: transferDemand,
+                            timestamp
+                        });
                     } else {
+                        // Change the source record to target variant
+                        const originalVariant = record[partNumberColumn];
                         record[partNumberColumn] = targetVariant;
+                        
+                        // Add transfer history
+                        record['Transfer History'] = `From: ${originalVariant}\\${transferDemand}\\${timestamp}`;
+                        
                         transferCount++;
+                        
+                        transferHistory.push({
+                            from: originalVariant,
+                            to: targetVariant,
+                            amount: transferDemand,
+                            timestamp
+                        });
                     }
                 }
             });
@@ -324,8 +362,9 @@ class DemandTransferApp {
             this.completedTransfers[dfuCode] = {
                 type: 'bulk',
                 targetVariant: targetVariant,
-                timestamp: new Date().toISOString(),
-                originalVariantCount: dfuData.variants.length
+                timestamp: timestamp,
+                originalVariantCount: dfuData.variants.length,
+                transferHistory
             };
             
             this.showNotification(`Bulk transfer completed for DFU ${dfuCode}: ${dfuData.variants.length - 1} variants transferred to ${targetVariant}`);
@@ -356,6 +395,8 @@ class DemandTransferApp {
                     console.log(`Found ${sourceRecords.length} records for source variant ${sourceVariant}`);
                     
                     sourceRecords.forEach(record => {
+                        const transferDemand = parseFloat(record[demandColumn]) || 0;
+                        
                         // Try to find a matching target record with same week and location
                         const targetRecord = dfuRecords.find(r => 
                             r[partNumberColumn].toString() === targetVariant.toString() && 
@@ -363,19 +404,36 @@ class DemandTransferApp {
                             r['Source Location'] === record['Source Location']
                         );
                         
-                        const transferDemand = parseFloat(record[demandColumn]) || 0;
-                        
                         if (targetRecord) {
                             // Add to existing target record
                             const oldDemand = parseFloat(targetRecord[demandColumn]) || 0;
                             targetRecord[demandColumn] = oldDemand + transferDemand;
+                            
+                            // Add transfer history to target record
+                            const existingHistory = targetRecord['Transfer History'] || '';
+                            const newHistoryEntry = `From: ${sourceVariant}\\${transferDemand}\\${timestamp}`;
+                            targetRecord['Transfer History'] = existingHistory ? 
+                                `${existingHistory}; ${newHistoryEntry}` : newHistoryEntry;
+                            
                             record[demandColumn] = 0; // Zero out source
                             console.log(`Added ${transferDemand} demand to existing target record`);
                         } else {
                             // Change the source record to target variant
+                            const originalVariant = record[partNumberColumn];
                             record[partNumberColumn] = targetVariant;
+                            
+                            // Add transfer history
+                            record['Transfer History'] = `From: ${originalVariant}\\${transferDemand}\\${timestamp}`;
+                            
                             console.log(`Changed record part number from ${sourceVariant} to ${targetVariant}`);
                         }
+                        
+                        transferHistory.push({
+                            from: sourceVariant,
+                            to: targetVariant,
+                            amount: transferDemand,
+                            timestamp
+                        });
                     });
                     
                     transferCount++;
@@ -388,8 +446,9 @@ class DemandTransferApp {
             this.completedTransfers[dfuCode] = {
                 type: 'individual',
                 transfers: individualTransfers,
-                timestamp: new Date().toISOString(),
-                transferCount: transferCount
+                timestamp: timestamp,
+                transferCount: transferCount,
+                transferHistory
             };
             
             this.showNotification(`Individual transfers completed for DFU ${dfuCode}: ${transferCount} variant transfers executed`);
@@ -470,6 +529,7 @@ class DemandTransferApp {
             const calendarWeek = record['Calendar.week'];
             const sourceLocation = record['Source Location'];
             const demand = parseFloat(record[demandColumn]) || 0;
+            const transferHistory = record['Transfer History'] || '';
             
             // Create a unique key for this combination
             const key = `${partNumber}|${calendarWeek}|${sourceLocation}`;
@@ -478,11 +538,22 @@ class DemandTransferApp {
                 // Add to existing consolidated record
                 const existing = consolidatedMap.get(key);
                 existing[demandColumn] = (parseFloat(existing[demandColumn]) || 0) + demand;
+                
+                // Consolidate transfer histories
+                if (transferHistory && existing['Transfer History']) {
+                    existing['Transfer History'] = `${existing['Transfer History']}; ${transferHistory}`;
+                } else if (transferHistory) {
+                    existing['Transfer History'] = transferHistory;
+                }
+                
                 console.log(`Consolidated ${demand} into existing record for ${partNumber}, total now: ${existing[demandColumn]}`);
             } else {
                 // Create new consolidated record
                 const consolidatedRecord = { ...record };
                 consolidatedRecord[demandColumn] = demand;
+                if (transferHistory) {
+                    consolidatedRecord['Transfer History'] = transferHistory;
+                }
                 consolidatedMap.set(key, consolidatedRecord);
             }
         });
@@ -624,8 +695,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.2.0</p>
-                            <p>Build: 2025-07-20-20:50</p>
+                            <p>Version 2.3.0</p>
+                            <p>Build: 2025-07-20-21:00</p>
                         </div>
                     </div>
                 </div>
