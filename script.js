@@ -344,29 +344,33 @@ class DemandTransferApp {
             this.showNotification(`Individual transfers completed for DFU ${dfuCode}: ${transferCount} variant transfers executed`);
         }
 
-        // CRITICAL: Consolidate records after transfer to merge duplicates
+        // CRITICAL: Consolidate records FIRST before recalculating UI data
+        console.log('Step 1: Consolidating records...');
         this.consolidateRecords(dfuCode);
-
-        // Force a complete recalculation by clearing cached data first
+        
+        // THEN clear cached data and recalculate
+        console.log('Step 2: Clearing cached data...');
         this.multiVariantDFUs = {};
         this.filteredDFUs = {};
         
-        // Re-process the data with the updated rawData to refresh the UI
-        console.log('Recalculating variant demands after transfer...');
+        console.log('Step 3: Recalculating variant demands...');
         this.processMultiVariantDFUs(this.rawData);
         
+        console.log('Step 4: Updating UI...');
         // Clear the selection to force UI refresh
         const currentSelection = this.selectedDFU;
         this.selectedDFU = null;
         
-        // Re-render and then restore selection
+        // Re-render immediately
         this.render();
         
-        // Restore selection after a brief delay to ensure UI updates
+        // Restore selection after ensuring consolidation is complete
         setTimeout(() => {
+            console.log('Step 5: Restoring selection...');
             this.selectedDFU = currentSelection;
             this.render();
-        }, 100);
+            console.log('Transfer and UI update complete!');
+        }, 200);
     }
     
     consolidateRecords(dfuCode) {
