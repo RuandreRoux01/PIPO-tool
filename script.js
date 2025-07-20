@@ -1,6 +1,6 @@
 // DFU Demand Transfer Management Application
-// Version: 2.1.0 - Build: 2025-07-20-20:30
-// Last Updated: Fixed UI refresh issue with forced DOM rebuild
+// Version: 2.1.1 - Build: 2025-07-20-20:35
+// Last Updated: Fixed syntax error in forceUIRefresh method
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
@@ -17,7 +17,7 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.1.0 - Build: 2025-07-20-20:30');
+        console.log('🚀 DFU Demand Transfer App v2.1.1 - Build: 2025-07-20-20:35');
         console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
         this.render();
         this.attachEventListeners();
@@ -382,7 +382,7 @@ class DemandTransferApp {
             // Force a complete DOM rebuild for the selected DFU section
             this.forceUIRefresh();
             console.log('Transfer and UI update complete!');
-        }, 300); // Slightly longer delay to ensure complete refresh
+        }, 300);
     }
     
     forceUIRefresh() {
@@ -578,8 +578,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.1.0</p>
-                            <p>Build: 2025-07-20-20:30</p>
+                            <p>Version 2.1.1</p>
+                            <p>Build: 2025-07-20-20:35</p>
                         </div>
                     </div>
                 </div>
