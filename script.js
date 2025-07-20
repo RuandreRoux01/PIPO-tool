@@ -1,6 +1,6 @@
 // DFU Demand Transfer Management Application
-// Version: 2.1.1 - Build: 2025-07-20-20:35
-// Last Updated: Fixed syntax error in forceUIRefresh method
+// Version: 2.1.2 - Build: 2025-07-20-20:40
+// Last Updated: Complete syntax fix and cleanup
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
@@ -17,7 +17,7 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.1.1 - Build: 2025-07-20-20:35');
+        console.log('🚀 DFU Demand Transfer App v2.1.2 - Build: 2025-07-20-20:40');
         console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
         this.render();
         this.attachEventListeners();
@@ -154,32 +154,55 @@ class DemandTransferApp {
         
         Object.keys(groupedByDFU).forEach(dfuCode => {
             const records = groupedByDFU[dfuCode];
-            const uniquePartCodes = [...new Set(records.map(r => r[partNumberColumn]))].filter(Boolean);
+            
+            // Get unique part codes, ensuring we treat them as strings for consistency
+            const uniquePartCodes = [...new Set(records.map(r => r[partNumberColumn].toString()))].filter(Boolean);
             
             if (uniquePartCodes.length > 1) {
                 multiVariantCount++;
                 const variantDemand = {};
+                
                 uniquePartCodes.forEach(partCode => {
-                    const partCodeRecords = records.filter(r => r[partNumberColumn] === partCode);
+                    // Filter records for this part code, ensuring string comparison
+                    const partCodeRecords = records.filter(r => r[partNumberColumn].toString() === partCode);
+                    
+                    // Sum up all demand for this variant across all records
                     const totalDemand = partCodeRecords.reduce((sum, r) => {
                         const demand = parseFloat(r[demandColumn]) || 0;
                         return sum + demand;
                     }, 0);
-                    variantDemand[partCode] = {
-                        totalDemand,
-                        recordCount: partCodeRecords.length,
-                        records: partCodeRecords
-                    };
+                    
+                    // Only include variants that have non-zero records (to handle transferred variants)
+                    if (partCodeRecords.length > 0) {
+                        variantDemand[partCode] = {
+                            totalDemand,
+                            recordCount: partCodeRecords.length,
+                            records: partCodeRecords
+                        };
+                    }
                 });
                 
-                multiVariants[dfuCode] = {
-                    variants: uniquePartCodes,
-                    variantDemand,
-                    totalRecords: records.length,
-                    dfuColumn,
-                    partNumberColumn,
-                    demandColumn
-                };
+                // Recheck if we still have multiple variants after filtering
+                const activeVariants = Object.keys(variantDemand);
+                if (activeVariants.length > 1) {
+                    multiVariants[dfuCode] = {
+                        variants: activeVariants,
+                        variantDemand,
+                        totalRecords: records.length,
+                        dfuColumn,
+                        partNumberColumn,
+                        demandColumn
+                    };
+                    
+                    console.log(`DFU ${dfuCode} variants after processing:`, activeVariants.map(v => ({
+                        variant: v,
+                        demand: variantDemand[v].totalDemand,
+                        records: variantDemand[v].recordCount
+                    })));
+                } else {
+                    // If only one variant remains, it's no longer multi-variant
+                    multiVariantCount--;
+                }
             }
         });
 
@@ -385,29 +408,6 @@ class DemandTransferApp {
         }, 300);
     }
     
-    forceUIRefresh() {
-        // Get the app container and force a complete re-render
-        const app = document.getElementById('app');
-        
-        // Store current state
-        const currentSearch = this.searchTerm;
-        
-        // Temporarily clear the container
-        app.innerHTML = '<div class="max-w-6xl mx-auto p-6 bg-white min-h-screen"><div class="text-center py-12"><div class="loading-spinner mb-2"></div><p>Refreshing interface...</p></div></div>';
-        
-        // Force a short delay then rebuild
-        setTimeout(() => {
-            // Restore search term
-            this.searchTerm = currentSearch;
-            
-            // Rebuild the entire interface
-            this.render();
-            
-            console.log('Forced UI refresh complete - interface rebuilt from scratch');
-        }, 100);
-    }
-    }
-    
     consolidateRecords(dfuCode) {
         console.log(`Consolidating records for DFU ${dfuCode}`);
         
@@ -490,6 +490,28 @@ class DemandTransferApp {
         });
         
         console.log(`DFU ${dfuCode} variant summary after consolidation:`, variantSummary);
+    }
+    
+    forceUIRefresh() {
+        // Get the app container and force a complete re-render
+        const app = document.getElementById('app');
+        
+        // Store current state
+        const currentSearch = this.searchTerm;
+        
+        // Temporarily clear the container
+        app.innerHTML = '<div class="max-w-6xl mx-auto p-6 bg-white min-h-screen"><div class="text-center py-12"><div class="loading-spinner mb-2"></div><p>Refreshing interface...</p></div></div>';
+        
+        // Force a short delay then rebuild
+        setTimeout(() => {
+            // Restore search term
+            this.searchTerm = currentSearch;
+            
+            // Rebuild the entire interface
+            this.render();
+            
+            console.log('Forced UI refresh complete - interface rebuilt from scratch');
+        }, 100);
     }
     
     cancelTransfer(dfuCode) {
@@ -578,8 +600,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.1.1</p>
-                            <p>Build: 2025-07-20-20:35</p>
+                            <p>Version 2.1.2</p>
+                            <p>Build: 2025-07-20-20:40</p>
                         </div>
                     </div>
                 </div>
@@ -626,7 +648,7 @@ class DemandTransferApp {
                                                 <p class="text-sm text-gray-600">${dfuData.variants.length} variants</p>
                                             </div>
                                             <div class="text-right">
-                                                ${this.transfers[dfuCode] && Object.keys(this.transfers[dfuCode]).length > 0 || this.bulkTransfers[dfuCode] ? `
+                                                ${(this.transfers[dfuCode] && Object.keys(this.transfers[dfuCode]).length > 0) || this.bulkTransfers[dfuCode] ? `
                                                     <span class="inline-flex items-center gap-1 text-green-600 text-sm">
                                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -713,7 +735,7 @@ class DemandTransferApp {
                                 </div>
                                 
                                 <!-- Action Buttons -->
-                                ${(this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0) || this.bulkTransfers[this.selectedDFU] ? `
+                                ${((this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0) || this.bulkTransfers[this.selectedDFU]) ? `
                                     <div class="p-3 bg-blue-50 rounded-lg">
                                         <div class="text-sm text-blue-800 mb-3">
                                             ${this.bulkTransfers[this.selectedDFU] ? `
