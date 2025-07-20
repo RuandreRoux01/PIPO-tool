@@ -1,6 +1,6 @@
 // DFU Demand Transfer Management Application
-// Version: 2.1.2 - Build: 2025-07-20-20:40
-// Last Updated: Complete syntax fix and cleanup
+// Version: 2.2.0 - Build: 2025-07-20-20:50
+// Last Updated: Added completed transfer tracking and "Done" status display
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
@@ -10,6 +10,7 @@ class DemandTransferApp {
         this.searchTerm = '';
         this.transfers = {}; // Format: { dfuCode: { sourceVariant: targetVariant } }
         this.bulkTransfers = {}; // Format: { dfuCode: targetVariant }
+        this.completedTransfers = {}; // Format: { dfuCode: { type: 'bulk'|'individual', targetVariant, timestamp } }
         this.isProcessed = false;
         this.isLoading = false;
         
@@ -17,7 +18,7 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.1.2 - Build: 2025-07-20-20:40');
+        console.log('🚀 DFU Demand Transfer App v2.2.0 - Build: 2025-07-20-20:50');
         console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
         this.render();
         this.attachEventListeners();
@@ -158,7 +159,10 @@ class DemandTransferApp {
             // Get unique part codes, ensuring we treat them as strings for consistency
             const uniquePartCodes = [...new Set(records.map(r => r[partNumberColumn].toString()))].filter(Boolean);
             
-            if (uniquePartCodes.length > 1) {
+            // Check if this DFU has completed transfers
+            const isCompleted = this.completedTransfers[dfuCode];
+            
+            if (uniquePartCodes.length > 1 || isCompleted) {
                 multiVariantCount++;
                 const variantDemand = {};
                 
@@ -172,7 +176,7 @@ class DemandTransferApp {
                         return sum + demand;
                     }, 0);
                     
-                    // Only include variants that have non-zero records (to handle transferred variants)
+                    // Include all variants that have records
                     if (partCodeRecords.length > 0) {
                         variantDemand[partCode] = {
                             totalDemand,
@@ -182,16 +186,18 @@ class DemandTransferApp {
                     }
                 });
                 
-                // Recheck if we still have multiple variants after filtering
+                // Always include DFUs that have completed transfers, even if they now have only one variant
                 const activeVariants = Object.keys(variantDemand);
-                if (activeVariants.length > 1) {
+                if (activeVariants.length > 1 || isCompleted) {
                     multiVariants[dfuCode] = {
                         variants: activeVariants,
                         variantDemand,
                         totalRecords: records.length,
                         dfuColumn,
                         partNumberColumn,
-                        demandColumn
+                        demandColumn,
+                        isCompleted: !!isCompleted,
+                        completionInfo: isCompleted || null
                     };
                     
                     console.log(`DFU ${dfuCode} variants after processing:`, activeVariants.map(v => ({
@@ -199,8 +205,8 @@ class DemandTransferApp {
                         demand: variantDemand[v].totalDemand,
                         records: variantDemand[v].recordCount
                     })));
-                } else {
-                    // If only one variant remains, it's no longer multi-variant
+                } else if (activeVariants.length === 1) {
+                    // If only one variant remains and no completion record, it's no longer multi-variant
                     multiVariantCount--;
                 }
             }
@@ -214,7 +220,7 @@ class DemandTransferApp {
         if (multiVariantCount === 0) {
             this.showNotification('No DFU codes with multiple variants found in the data', 'error');
         } else {
-            this.showNotification(`Found ${multiVariantCount} DFU codes with multiple variants`);
+            this.showNotification(`Found ${multiVariantCount} DFUs with multiple variants`);
         }
     }
     
@@ -313,6 +319,15 @@ class DemandTransferApp {
             });
             
             delete this.bulkTransfers[dfuCode];
+            
+            // Mark as completed transfer
+            this.completedTransfers[dfuCode] = {
+                type: 'bulk',
+                targetVariant: targetVariant,
+                timestamp: new Date().toISOString(),
+                originalVariantCount: dfuData.variants.length
+            };
+            
             this.showNotification(`Bulk transfer completed for DFU ${dfuCode}: ${dfuData.variants.length - 1} variants transferred to ${targetVariant}`);
         }
         
@@ -368,6 +383,15 @@ class DemandTransferApp {
             });
             
             this.transfers[dfuCode] = {};
+            
+            // Mark as completed transfer
+            this.completedTransfers[dfuCode] = {
+                type: 'individual',
+                transfers: individualTransfers,
+                timestamp: new Date().toISOString(),
+                transferCount: transferCount
+            };
+            
             this.showNotification(`Individual transfers completed for DFU ${dfuCode}: ${transferCount} variant transfers executed`);
         }
 
@@ -600,8 +624,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.1.2</p>
-                            <p>Build: 2025-07-20-20:40</p>
+                            <p>Version 2.2.0</p>
+                            <p>Build: 2025-07-20-20:50</p>
                         </div>
                     </div>
                 </div>
@@ -645,10 +669,19 @@ class DemandTransferApp {
                                         <div class="flex justify-between items-start">
                                             <div>
                                                 <h4 class="font-medium text-gray-800">DFU: ${dfuCode}</h4>
-                                                <p class="text-sm text-gray-600">${dfuData.variants.length} variants</p>
+                                                <p class="text-sm text-gray-600">
+                                                    ${dfuData.isCompleted ? `1 variant (consolidated)` : `${dfuData.variants.length} variants`}
+                                                </p>
                                             </div>
                                             <div class="text-right">
-                                                ${(this.transfers[dfuCode] && Object.keys(this.transfers[dfuCode]).length > 0) || this.bulkTransfers[dfuCode] ? `
+                                                ${dfuData.isCompleted ? `
+                                                    <span class="inline-flex items-center gap-1 text-green-600 text-sm">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                        Done
+                                                    </span>
+                                                ` : (this.transfers[dfuCode] && Object.keys(this.transfers[dfuCode]).length > 0) || this.bulkTransfers[dfuCode] ? `
                                                     <span class="inline-flex items-center gap-1 text-green-600 text-sm">
                                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -671,102 +704,149 @@ class DemandTransferApp {
                             <div>
                                 <h3 class="font-semibold text-gray-800 mb-4">
                                     DFU: ${this.selectedDFU} - Variant Details
+                                    ${this.multiVariantDFUs[this.selectedDFU].isCompleted ? `
+                                        <span class="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                                            ✓ Transfer Complete
+                                        </span>
+                                    ` : ''}
                                 </h3>
                                 
-                                <!-- Bulk Transfer Section -->
-                                <div class="mb-6 p-4 bg-purple-50 rounded-lg border">
-                                    <h4 class="font-semibold text-purple-800 mb-3">Bulk Transfer (All Variants → One Target)</h4>
-                                    <p class="text-sm text-purple-600 mb-3">Transfer all variants to a single target variant:</p>
-                                    <div class="flex flex-wrap gap-2">
-                                        ${this.multiVariantDFUs[this.selectedDFU].variants.map(variant => {
-                                            const isSelected = this.bulkTransfers[this.selectedDFU] === variant;
-                                            return `
-                                                <button 
-                                                    class="px-3 py-1 rounded-full text-sm font-medium transition-all ${isSelected ? 'bg-purple-600 text-white' : 'bg-purple-100 text-purple-800 hover:bg-purple-200'}"
-                                                    data-bulk-target="${variant}"
-                                                >
-                                                    ${variant}
-                                                </button>
-                                            `;
-                                        }).join('')}
-                                    </div>
-                                    ${this.bulkTransfers[this.selectedDFU] ? `
-                                        <p class="text-sm text-purple-700 mt-2">
-                                            → All variants will transfer to: <strong>${this.bulkTransfers[this.selectedDFU]}</strong>
-                                        </p>
-                                    ` : ''}
-                                </div>
-                                
-                                <!-- Individual Transfer Section -->
-                                <div class="mb-6">
-                                    <h4 class="font-semibold text-gray-800 mb-3">Individual Transfers (Variant → Specific Target)</h4>
-                                    <div class="space-y-3">
-                                        ${this.multiVariantDFUs[this.selectedDFU].variants.map(variant => {
-                                            const demandData = this.multiVariantDFUs[this.selectedDFU].variantDemand[variant];
-                                            const currentTransfer = this.transfers[this.selectedDFU]?.[variant];
-                                            
-                                            return `
-                                                <div class="border rounded-lg p-3 bg-gray-50">
-                                                    <div class="flex justify-between items-center mb-2">
-                                                        <div>
-                                                            <h5 class="font-medium text-gray-800">Part: ${variant}</h5>
-                                                            <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records • ${this.formatNumber(demandData?.totalDemand || 0)} demand</p>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    <div class="flex items-center gap-2 text-sm">
-                                                        <span class="text-gray-600">Transfer to:</span>
-                                                        <select class="px-2 py-1 border rounded text-sm" data-source-variant="${variant}">
-                                                            <option value="">Select target...</option>
-                                                            ${this.multiVariantDFUs[this.selectedDFU].variants.map(targetVariant => `
-                                                                <option value="${targetVariant}" ${currentTransfer === targetVariant ? 'selected' : ''}>
-                                                                    ${targetVariant}${targetVariant === variant ? ' (self)' : ''}
-                                                                </option>
-                                                            `).join('')}
-                                                        </select>
-                                                        ${currentTransfer && currentTransfer !== variant ? `
-                                                            <span class="text-green-600 text-sm">→ ${currentTransfer}</span>
-                                                        ` : ''}
-                                                    </div>
-                                                </div>
-                                            `;
-                                        }).join('')}
-                                    </div>
-                                </div>
-                                
-                                <!-- Action Buttons -->
-                                ${((this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0) || this.bulkTransfers[this.selectedDFU]) ? `
-                                    <div class="p-3 bg-blue-50 rounded-lg">
-                                        <div class="text-sm text-blue-800 mb-3">
-                                            ${this.bulkTransfers[this.selectedDFU] ? `
-                                                <p><strong>Bulk Transfer:</strong> All variants → ${this.bulkTransfers[this.selectedDFU]}</p>
+                                ${this.multiVariantDFUs[this.selectedDFU].isCompleted ? `
+                                    <!-- Completed Transfer Summary -->
+                                    <div class="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
+                                        <h4 class="font-semibold text-green-800 mb-3">✓ Transfer Completed</h4>
+                                        <div class="text-sm text-green-700">
+                                            <p><strong>Type:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.type === 'bulk' ? 'Bulk Transfer' : 'Individual Transfers'}</p>
+                                            <p><strong>Date:</strong> ${new Date(this.multiVariantDFUs[this.selectedDFU].completionInfo.timestamp).toLocaleString()}</p>
+                                            ${this.multiVariantDFUs[this.selectedDFU].completionInfo.type === 'bulk' ? `
+                                                <p><strong>Target Variant:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.targetVariant}</p>
+                                                <p><strong>Variants Consolidated:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.originalVariantCount - 1} → 1</p>
                                             ` : `
-                                                <p><strong>Individual Transfers:</strong></p>
-                                                <ul class="list-disc list-inside ml-4">
-                                                    ${Object.keys(this.transfers[this.selectedDFU]).map(sourceVariant => {
-                                                        const targetVariant = this.transfers[this.selectedDFU][sourceVariant];
-                                                        return sourceVariant !== targetVariant ? 
-                                                            `<li>${sourceVariant} → ${targetVariant}</li>` : '';
-                                                    }).filter(Boolean).join('')}
-                                                </ul>
+                                                <p><strong>Individual Transfers:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.transferCount} completed</p>
                                             `}
                                         </div>
-                                        <div class="flex gap-2">
-                                            <button class="btn btn-success" id="executeBtn">
-                                                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                                                </svg>
-                                                Execute Transfer
-                                            </button>
-                                            <button class="btn btn-secondary" id="cancelBtn">
-                                                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                                Cancel
-                                            </button>
+                                    </div>
+                                    
+                                    <!-- Current Variant Status -->
+                                    <div class="mb-6">
+                                        <h4 class="font-semibold text-gray-800 mb-3">Current Variant Status</h4>
+                                        <div class="space-y-3">
+                                            ${this.multiVariantDFUs[this.selectedDFU].variants.map(variant => {
+                                                const demandData = this.multiVariantDFUs[this.selectedDFU].variantDemand[variant];
+                                                
+                                                return `
+                                                    <div class="border rounded-lg p-3 bg-white">
+                                                        <div class="flex justify-between items-center">
+                                                            <div>
+                                                                <h5 class="font-medium text-gray-800">Part: ${variant}</h5>
+                                                                <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records</p>
+                                                            </div>
+                                                            <div class="text-right">
+                                                                <p class="font-medium text-gray-800">${this.formatNumber(demandData?.totalDemand || 0)}</p>
+                                                                <p class="text-sm text-gray-600">consolidated demand</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                `;
+                                            }).join('')}
                                         </div>
                                     </div>
-                                ` : ''}
+                                ` : `
+                                    <!-- Bulk Transfer Section -->
+                                    <div class="mb-6 p-4 bg-purple-50 rounded-lg border">
+                                        <h4 class="font-semibold text-purple-800 mb-3">Bulk Transfer (All Variants → One Target)</h4>
+                                        <p class="text-sm text-purple-600 mb-3">Transfer all variants to a single target variant:</p>
+                                        <div class="flex flex-wrap gap-2">
+                                            ${this.multiVariantDFUs[this.selectedDFU].variants.map(variant => {
+                                                const isSelected = this.bulkTransfers[this.selectedDFU] === variant;
+                                                return `
+                                                    <button 
+                                                        class="px-3 py-1 rounded-full text-sm font-medium transition-all ${isSelected ? 'bg-purple-600 text-white' : 'bg-purple-100 text-purple-800 hover:bg-purple-200'}"
+                                                        data-bulk-target="${variant}"
+                                                    >
+                                                        ${variant}
+                                                    </button>
+                                                `;
+                                            }).join('')}
+                                        </div>
+                                        ${this.bulkTransfers[this.selectedDFU] ? `
+                                            <p class="text-sm text-purple-700 mt-2">
+                                                → All variants will transfer to: <strong>${this.bulkTransfers[this.selectedDFU]}</strong>
+                                            </p>
+                                        ` : ''}
+                                    </div>
+                                    
+                                    <!-- Individual Transfer Section -->
+                                    <div class="mb-6">
+                                        <h4 class="font-semibold text-gray-800 mb-3">Individual Transfers (Variant → Specific Target)</h4>
+                                        <div class="space-y-3">
+                                            ${this.multiVariantDFUs[this.selectedDFU].variants.map(variant => {
+                                                const demandData = this.multiVariantDFUs[this.selectedDFU].variantDemand[variant];
+                                                const currentTransfer = this.transfers[this.selectedDFU]?.[variant];
+                                                
+                                                return `
+                                                    <div class="border rounded-lg p-3 bg-gray-50">
+                                                        <div class="flex justify-between items-center mb-2">
+                                                            <div>
+                                                                <h5 class="font-medium text-gray-800">Part: ${variant}</h5>
+                                                                <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records • ${this.formatNumber(demandData?.totalDemand || 0)} demand</p>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div class="flex items-center gap-2 text-sm">
+                                                            <span class="text-gray-600">Transfer to:</span>
+                                                            <select class="px-2 py-1 border rounded text-sm" data-source-variant="${variant}">
+                                                                <option value="">Select target...</option>
+                                                                ${this.multiVariantDFUs[this.selectedDFU].variants.map(targetVariant => `
+                                                                    <option value="${targetVariant}" ${currentTransfer === targetVariant ? 'selected' : ''}>
+                                                                        ${targetVariant}${targetVariant === variant ? ' (self)' : ''}
+                                                                    </option>
+                                                                `).join('')}
+                                                            </select>
+                                                            ${currentTransfer && currentTransfer !== variant ? `
+                                                                <span class="text-green-600 text-sm">→ ${currentTransfer}</span>
+                                                            ` : ''}
+                                                        </div>
+                                                    </div>
+                                                `;
+                                            }).join('')}
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Action Buttons -->
+                                    ${((this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0) || this.bulkTransfers[this.selectedDFU]) ? `
+                                        <div class="p-3 bg-blue-50 rounded-lg">
+                                            <div class="text-sm text-blue-800 mb-3">
+                                                ${this.bulkTransfers[this.selectedDFU] ? `
+                                                    <p><strong>Bulk Transfer:</strong> All variants → ${this.bulkTransfers[this.selectedDFU]}</p>
+                                                ` : `
+                                                    <p><strong>Individual Transfers:</strong></p>
+                                                    <ul class="list-disc list-inside ml-4">
+                                                        ${Object.keys(this.transfers[this.selectedDFU]).map(sourceVariant => {
+                                                            const targetVariant = this.transfers[this.selectedDFU][sourceVariant];
+                                                            return sourceVariant !== targetVariant ? 
+                                                                `<li>${sourceVariant} → ${targetVariant}</li>` : '';
+                                                        }).filter(Boolean).join('')}
+                                                    </ul>
+                                                `}
+                                            </div>
+                                            <div class="flex gap-2">
+                                                <button class="btn btn-success" id="executeBtn">
+                                                    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                                    </svg>
+                                                    Execute Transfer
+                                                </button>
+                                                <button class="btn btn-secondary" id="cancelBtn">
+                                                    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                `}
                             </div>
                         ` : `
                             <div class="text-center py-12 text-gray-500">
