@@ -1,6 +1,6 @@
 // DFU Demand Transfer Management Application
-// Version: 2.3.0 - Build: 2025-07-20-21:00
-// Last Updated: Added Transfer History audit trail column to Excel export
+// Version: 2.3.2 - Build: 2025-07-20-21:08
+// Last Updated: Added PIPO prefix to Transfer History for tool identification
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
@@ -18,7 +18,7 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.3.0 - Build: 2025-07-20-21:00');
+        console.log('🚀 DFU Demand Transfer App v2.3.2 - Build: 2025-07-20-21:08');
         console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
         this.render();
         this.attachEventListeners();
@@ -323,9 +323,10 @@ class DemandTransferApp {
                         
                         // Add transfer history to target record
                         const existingHistory = targetRecord['Transfer History'] || '';
-                        const newHistoryEntry = `From: ${sourceVariant}\\${transferDemand}\\${timestamp}`;
+                        const newHistoryEntry = `[${sourceVariant} → ${transferDemand} @ ${timestamp}]`;
+                        const pipoPrefix = existingHistory.startsWith('PIPO') ? '' : 'PIPO ';
                         targetRecord['Transfer History'] = existingHistory ? 
-                            `${existingHistory}; ${newHistoryEntry}` : newHistoryEntry;
+                            `${existingHistory} ${newHistoryEntry}` : `${pipoPrefix}${newHistoryEntry}`;
                         
                         record[demandColumn] = 0;
                         transferCount++;
@@ -342,7 +343,7 @@ class DemandTransferApp {
                         record[partNumberColumn] = targetVariant;
                         
                         // Add transfer history
-                        record['Transfer History'] = `From: ${originalVariant}\\${transferDemand}\\${timestamp}`;
+                        record['Transfer History'] = `PIPO [${originalVariant} → ${transferDemand} @ ${timestamp}]`;
                         
                         transferCount++;
                         
@@ -411,9 +412,10 @@ class DemandTransferApp {
                             
                             // Add transfer history to target record
                             const existingHistory = targetRecord['Transfer History'] || '';
-                            const newHistoryEntry = `From: ${sourceVariant}\\${transferDemand}\\${timestamp}`;
+                            const newHistoryEntry = `[${sourceVariant} → ${transferDemand} @ ${timestamp}]`;
+                            const pipoPrefix = existingHistory.startsWith('PIPO') ? '' : 'PIPO ';
                             targetRecord['Transfer History'] = existingHistory ? 
-                                `${existingHistory}; ${newHistoryEntry}` : newHistoryEntry;
+                                `${existingHistory} ${newHistoryEntry}` : `${pipoPrefix}${newHistoryEntry}`;
                             
                             record[demandColumn] = 0; // Zero out source
                             console.log(`Added ${transferDemand} demand to existing target record`);
@@ -423,7 +425,7 @@ class DemandTransferApp {
                             record[partNumberColumn] = targetVariant;
                             
                             // Add transfer history
-                            record['Transfer History'] = `From: ${originalVariant}\\${transferDemand}\\${timestamp}`;
+                            record['Transfer History'] = `PIPO [${originalVariant} → ${transferDemand} @ ${timestamp}]`;
                             
                             console.log(`Changed record part number from ${sourceVariant} to ${targetVariant}`);
                         }
@@ -541,7 +543,7 @@ class DemandTransferApp {
                 
                 // Consolidate transfer histories
                 if (transferHistory && existing['Transfer History']) {
-                    existing['Transfer History'] = `${existing['Transfer History']}; ${transferHistory}`;
+                    existing['Transfer History'] = `${existing['Transfer History']} ${transferHistory}`;
                 } else if (transferHistory) {
                     existing['Transfer History'] = transferHistory;
                 }
@@ -695,8 +697,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.3.0</p>
-                            <p>Build: 2025-07-20-21:00</p>
+                            <p>Version 2.3.2</p>
+                            <p>Build: 2025-07-20-21:08</p>
                         </div>
                     </div>
                 </div>
