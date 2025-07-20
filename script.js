@@ -1,4 +1,6 @@
 // DFU Demand Transfer Management Application
+// Version: 2.1.0 - Build: 2025-07-20-20:30
+// Last Updated: Fixed UI refresh issue with forced DOM rebuild
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
@@ -15,6 +17,8 @@ class DemandTransferApp {
     }
     
     init() {
+        console.log('🚀 DFU Demand Transfer App v2.1.0 - Build: 2025-07-20-20:30');
+        console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
         this.render();
         this.attachEventListeners();
     }
@@ -375,9 +379,33 @@ class DemandTransferApp {
                 console.log('Fresh variant demand data:', this.multiVariantDFUs[currentSelection].variantDemand);
             }
             
-            this.render();
+            // Force a complete DOM rebuild for the selected DFU section
+            this.forceUIRefresh();
             console.log('Transfer and UI update complete!');
         }, 300); // Slightly longer delay to ensure complete refresh
+    }
+    
+    forceUIRefresh() {
+        // Get the app container and force a complete re-render
+        const app = document.getElementById('app');
+        
+        // Store current state
+        const currentSearch = this.searchTerm;
+        
+        // Temporarily clear the container
+        app.innerHTML = '<div class="max-w-6xl mx-auto p-6 bg-white min-h-screen"><div class="text-center py-12"><div class="loading-spinner mb-2"></div><p>Refreshing interface...</p></div></div>';
+        
+        // Force a short delay then rebuild
+        setTimeout(() => {
+            // Restore search term
+            this.searchTerm = currentSearch;
+            
+            // Rebuild the entire interface
+            this.render();
+            
+            console.log('Forced UI refresh complete - interface rebuilt from scratch');
+        }, 100);
+    }
     }
     
     consolidateRecords(dfuCode) {
@@ -542,10 +570,18 @@ class DemandTransferApp {
         app.innerHTML = `
             <div class="max-w-6xl mx-auto p-6 bg-white min-h-screen">
                 <div class="mb-6">
-                    <h1 class="text-2xl font-bold text-gray-800 mb-2">DFU Demand Transfer Management</h1>
-                    <p class="text-gray-600">
-                        Manage demand transfers for DFU codes with multiple variants. Found ${Object.keys(this.multiVariantDFUs).length} DFUs with multiple variants.
-                    </p>
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h1 class="text-2xl font-bold text-gray-800 mb-2">DFU Demand Transfer Management</h1>
+                            <p class="text-gray-600">
+                                Manage demand transfers for DFU codes with multiple variants. Found ${Object.keys(this.multiVariantDFUs).length} DFUs with multiple variants.
+                            </p>
+                        </div>
+                        <div class="text-right text-xs text-gray-400">
+                            <p>Version 2.1.0</p>
+                            <p>Build: 2025-07-20-20:30</p>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="flex gap-4 mb-6 flex-responsive">
