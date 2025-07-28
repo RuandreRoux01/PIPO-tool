@@ -13,6 +13,7 @@ class DemandTransferApp {
         this.availablePlantLocations = [];
         this.transfers = {}; // Format: { dfuCode: { sourceVariant: targetVariant } }
         this.bulkTransfers = {}; // Format: { dfuCode: targetVariant }
+        this.granularTransfers = {}; // Format: { dfuCode: { sourceVariant: { targetVariant: { weekKey: { selected: boolean, customQuantity: number } } } } }
         this.completedTransfers = {}; // Format: { dfuCode: { type: 'bulk'|'individual', targetVariant, timestamp } }
         this.isProcessed = false;
         this.isLoading = false;
@@ -135,6 +136,7 @@ class DemandTransferApp {
         const plantLocationColumn = 'Plant Location';
         const calendarWeekColumn = 'Calendar.week';
         const sourceLocationColumn = 'Source Location';
+        const weekNumberColumn = 'Week Number';
         
         console.log('Using column mapping:', { 
             dfuColumn, 
@@ -143,11 +145,12 @@ class DemandTransferApp {
             partDescriptionColumn, 
             plantLocationColumn,
             calendarWeekColumn,
-            sourceLocationColumn
+            sourceLocationColumn,
+            weekNumberColumn
         });
         
         // Validate required columns exist
-        const requiredColumns = [dfuColumn, partNumberColumn, demandColumn, plantLocationColumn];
+        const requiredColumns = [dfuColumn, partNumberColumn, demandColumn, plantLocationColumn, weekNumberColumn];
         const missingColumns = requiredColumns.filter(col => !columns.includes(col));
         
         if (missingColumns.length > 0) {
@@ -218,11 +221,32 @@ class DemandTransferApp {
                     
                     // Include all variants that have records
                     if (partCodeRecords.length > 0) {
+                        // Group records by week for granular control
+                        const weeklyRecords = {};
+                        partCodeRecords.forEach(record => {
+                            const weekNum = record[weekNumberColumn];
+                            const demand = parseFloat(record[demandColumn]) || 0;
+                            const sourceLocation = record[sourceLocationColumn];
+                            
+                            const weekKey = `${weekNum}-${sourceLocation}`;
+                            if (!weeklyRecords[weekKey]) {
+                                weeklyRecords[weekKey] = {
+                                    weekNumber: weekNum,
+                                    sourceLocation: sourceLocation,
+                                    demand: 0,
+                                    records: []
+                                };
+                            }
+                            weeklyRecords[weekKey].demand += demand;
+                            weeklyRecords[weekKey].records.push(record);
+                        });
+                        
                         variantDemand[partCode] = {
                             totalDemand,
                             recordCount: partCodeRecords.length,
                             records: partCodeRecords,
-                            partDescription: partDescription || 'Description not available'
+                            partDescription: partDescription || 'Description not available',
+                            weeklyRecords: weeklyRecords
                         };
                     }
                 });
@@ -241,6 +265,7 @@ class DemandTransferApp {
                         plantLocationColumn,
                         calendarWeekColumn,
                         sourceLocationColumn,
+                        weekNumberColumn,
                         isCompleted: !!isCompleted,
                         completionInfo: isCompleted || null,
                         plantLocation: records[0] ? records[0][plantLocationColumn] : null
@@ -318,7 +343,54 @@ class DemandTransferApp {
             this.transfers[dfuCode] = {};
         }
         this.transfers[dfuCode][sourceVariant] = targetVariant;
+        
+        // Clear granular transfers when setting individual transfer
+        if (this.granularTransfers[dfuCode] && this.granularTransfers[dfuCode][sourceVariant]) {
+            delete this.granularTransfers[dfuCode][sourceVariant];
+        }
+        
         this.render();
+    }
+    
+    toggleGranularWeek(dfuCode, sourceVariant, targetVariant, weekKey) {
+        if (!this.granularTransfers[dfuCode]) {
+            this.granularTransfers[dfuCode] = {};
+        }
+        if (!this.granularTransfers[dfuCode][sourceVariant]) {
+            this.granularTransfers[dfuCode][sourceVariant] = {};
+        }
+        if (!this.granularTransfers[dfuCode][sourceVariant][targetVariant]) {
+            this.granularTransfers[dfuCode][sourceVariant][targetVariant] = {};
+        }
+        
+        // Toggle selection
+        const current = this.granularTransfers[dfuCode][sourceVariant][targetVariant][weekKey];
+        if (current && current.selected) {
+            delete this.granularTransfers[dfuCode][sourceVariant][targetVariant][weekKey];
+        } else {
+            this.granularTransfers[dfuCode][sourceVariant][targetVariant][weekKey] = {
+                selected: true,
+                customQuantity: null // null means use full quantity
+            };
+        }
+        
+        // Clear individual transfer when granular is used
+        if (this.transfers[dfuCode] && this.transfers[dfuCode][sourceVariant]) {
+            delete this.transfers[dfuCode][sourceVariant];
+        }
+        
+        this.render();
+    }
+    
+    updateGranularQuantity(dfuCode, sourceVariant, targetVariant, weekKey, quantity) {
+        if (this.granularTransfers[dfuCode] && 
+            this.granularTransfers[dfuCode][sourceVariant] && 
+            this.granularTransfers[dfuCode][sourceVariant][targetVariant] && 
+            this.granularTransfers[dfuCode][sourceVariant][targetVariant][weekKey]) {
+            
+            this.granularTransfers[dfuCode][sourceVariant][targetVariant][weekKey].customQuantity = 
+                quantity === '' ? null : parseFloat(quantity);
+        }
     }
     
     executeTransfer(dfuCode) {
@@ -493,6 +565,114 @@ class DemandTransferApp {
             
             this.showNotification(`Individual transfers completed for DFU ${dfuCode}: ${transferCount} variant transfers executed`);
         }
+        
+        // Handle granular transfers
+        else if (this.granularTransfers[dfuCode] && Object.keys(this.granularTransfers[dfuCode]).length > 0) {
+            const granularTransfers = this.granularTransfers[dfuCode];
+            const dfuRecords = this.rawData.filter(record => record[dfuColumn] === dfuCode);
+            
+            console.log(`Executing granular transfers for DFU ${dfuCode}`);
+            console.log(`Granular transfers:`, granularTransfers);
+            
+            let granularTransferCount = 0;
+            
+            // Process each source variant's granular transfers
+            Object.keys(granularTransfers).forEach(sourceVariant => {
+                const sourceTargets = granularTransfers[sourceVariant];
+                
+                Object.keys(sourceTargets).forEach(targetVariant => {
+                    const weekTransfers = sourceTargets[targetVariant];
+                    
+                    Object.keys(weekTransfers).forEach(weekKey => {
+                        const weekTransfer = weekTransfers[weekKey];
+                        if (!weekTransfer.selected) return;
+                        
+                        const [weekNumber, sourceLocation] = weekKey.split('-');
+                        
+                        // Find the specific source record for this week and location
+                        const sourceRecord = dfuRecords.find(r => 
+                            r[partNumberColumn].toString() === sourceVariant.toString() &&
+                            r[weekNumberColumn].toString() === weekNumber.toString() &&
+                            r[sourceLocationColumn].toString() === sourceLocation.toString()
+                        );
+                        
+                        if (sourceRecord) {
+                            const originalDemand = parseFloat(sourceRecord[demandColumn]) || 0;
+                            const transferAmount = weekTransfer.customQuantity !== null ? 
+                                weekTransfer.customQuantity : originalDemand;
+                            
+                            console.log(`Transferring ${transferAmount} from ${sourceVariant} to ${targetVariant} for week ${weekNumber}`);
+                            
+                            // Find matching target record
+                            const targetRecord = dfuRecords.find(r => 
+                                r[partNumberColumn].toString() === targetVariant.toString() && 
+                                r[weekNumberColumn].toString() === weekNumber.toString() &&
+                                r[sourceLocationColumn].toString() === sourceLocation.toString()
+                            );
+                            
+                            if (targetRecord) {
+                                // Add to existing target record
+                                const oldDemand = parseFloat(targetRecord[demandColumn]) || 0;
+                                targetRecord[demandColumn] = oldDemand + transferAmount;
+                                
+                                // Add transfer history
+                                const existingHistory = targetRecord['Transfer History'] || '';
+                                const newHistoryEntry = `[W${weekNumber} ${sourceVariant} → ${transferAmount} @ ${timestamp}]`;
+                                const pipoPrefix = existingHistory.startsWith('PIPO') ? '' : 'PIPO ';
+                                targetRecord['Transfer History'] = existingHistory ? 
+                                    `${existingHistory} ${newHistoryEntry}` : `${pipoPrefix}${newHistoryEntry}`;
+                                
+                                // Update source record
+                                sourceRecord[demandColumn] = originalDemand - transferAmount;
+                                
+                            } else {
+                                // Create new record by modifying source
+                                if (transferAmount === originalDemand) {
+                                    // Transfer full amount - change part number
+                                    const originalVariant = sourceRecord[partNumberColumn];
+                                    sourceRecord[partNumberColumn] = targetVariant;
+                                    sourceRecord['Transfer History'] = `PIPO [W${weekNumber} ${originalVariant} → ${transferAmount} @ ${timestamp}]`;
+                                } else {
+                                    // Partial transfer - need to create new record and update source
+                                    const newRecord = { ...sourceRecord };
+                                    newRecord[partNumberColumn] = targetVariant;
+                                    newRecord[demandColumn] = transferAmount;
+                                    newRecord['Transfer History'] = `PIPO [W${weekNumber} ${sourceVariant} → ${transferAmount} @ ${timestamp}]`;
+                                    
+                                    // Update source record
+                                    sourceRecord[demandColumn] = originalDemand - transferAmount;
+                                    
+                                    // Add new record
+                                    this.rawData.push(newRecord);
+                                }
+                            }
+                            
+                            transferHistory.push({
+                                from: sourceVariant,
+                                to: targetVariant,
+                                amount: transferAmount,
+                                week: weekNumber,
+                                timestamp
+                            });
+                            
+                            granularTransferCount++;
+                        }
+                    });
+                });
+            });
+            
+            this.granularTransfers[dfuCode] = {};
+            
+            // Mark as completed transfer
+            this.completedTransfers[dfuCode] = {
+                type: 'granular',
+                timestamp: timestamp,
+                transferCount: granularTransferCount,
+                transferHistory
+            };
+            
+            this.showNotification(`Granular transfers completed for DFU ${dfuCode}: ${granularTransferCount} week-level transfers executed`);
+        }
 
         // CRITICAL: Consolidate records FIRST before recalculating UI data
         console.log('Step 1: Consolidating records...');
@@ -541,7 +721,7 @@ class DemandTransferApp {
             return;
         }
         
-        const { dfuColumn, partNumberColumn, demandColumn, calendarWeekColumn, sourceLocationColumn } = currentDFUData;
+        const { dfuColumn, partNumberColumn, demandColumn, calendarWeekColumn, sourceLocationColumn, weekNumberColumn } = currentDFUData;
         
         // Get all records for this DFU
         const allRecords = this.rawData;
@@ -555,12 +735,13 @@ class DemandTransferApp {
         dfuRecords.forEach((record) => {
             const partNumber = record[partNumberColumn].toString();
             const calendarWeek = record[calendarWeekColumn];
+            const weekNumber = record[weekNumberColumn];
             const sourceLocation = record[sourceLocationColumn];
             const demand = parseFloat(record[demandColumn]) || 0;
             const transferHistory = record['Transfer History'] || '';
             
             // Create a unique key for this combination
-            const key = `${partNumber}|${calendarWeek}|${sourceLocation}`;
+            const key = `${partNumber}|${weekNumber}|${sourceLocation}`;
             
             if (consolidatedMap.has(key)) {
                 // Add to existing consolidated record
@@ -640,6 +821,7 @@ class DemandTransferApp {
     cancelTransfer(dfuCode) {
         delete this.transfers[dfuCode];
         delete this.bulkTransfers[dfuCode];
+        delete this.granularTransfers[dfuCode];
         this.render();
     }
     
@@ -696,7 +878,7 @@ class DemandTransferApp {
                                             <li><strong>weekly fcst</strong> - Demand/forecast values</li>
                                             <li><strong>PartDescription</strong> - Product descriptions</li>
                                             <li><strong>Plant Location</strong> - Plant location codes</li>
-                                            <li><strong>Calendar.week</strong> - Calendar week information</li>
+                                            <li><strong>Week Number</strong> - Week number values</li>
                                             <li><strong>Source Location</strong> - Source location codes</li>
                                         </ul>
                                     </div>
@@ -892,23 +1074,26 @@ class DemandTransferApp {
                                     <!-- Individual Transfer Section -->
                                     <div class="mb-6">
                                         <h4 class="font-semibold text-gray-800 mb-3">Individual Transfers (Variant → Specific Target)</h4>
-                                        <div class="space-y-3">
+                                        <div class="space-y-4">
                                             ${this.multiVariantDFUs[this.selectedDFU].variants.map(variant => {
                                                 const demandData = this.multiVariantDFUs[this.selectedDFU].variantDemand[variant];
                                                 const currentTransfer = this.transfers[this.selectedDFU]?.[variant];
+                                                const hasGranularTransfers = this.granularTransfers[this.selectedDFU] && 
+                                                    this.granularTransfers[this.selectedDFU][variant] && 
+                                                    Object.keys(this.granularTransfers[this.selectedDFU][variant]).length > 0;
                                                 
                                                 return `
-                                                    <div class="border rounded-lg p-3 bg-gray-50">
-                                                        <div class="flex justify-between items-center mb-2">
+                                                    <div class="border rounded-lg p-4 bg-gray-50">
+                                                        <div class="flex justify-between items-center mb-3">
                                                             <div class="flex-1">
                                                                 <h5 class="font-medium text-gray-800">Part: ${variant}</h5>
                                                                 <p class="text-xs text-gray-500 mb-1 max-w-md break-words">${demandData?.partDescription || 'Description not available'}</p>
-                                                                <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records • ${this.formatNumber(demandData?.totalDemand || 0)} demand</p>
+                                                                <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records • ${this.formatNumber(demandData?.totalDemand || 0)} total demand</p>
                                                             </div>
                                                         </div>
                                                         
-                                                        <div class="flex items-center gap-2 text-sm">
-                                                            <span class="text-gray-600">Transfer to:</span>
+                                                        <div class="flex items-center gap-2 text-sm mb-3">
+                                                            <span class="text-gray-600">Transfer all to:</span>
                                                             <select class="px-2 py-1 border rounded text-sm" data-source-variant="${variant}">
                                                                 <option value="">Select target...</option>
                                                                 ${this.multiVariantDFUs[this.selectedDFU].variants.map(targetVariant => `
@@ -921,6 +1106,63 @@ class DemandTransferApp {
                                                                 <span class="text-green-600 text-sm">→ ${currentTransfer}</span>
                                                             ` : ''}
                                                         </div>
+                                                        
+                                                        <!-- Granular Week-Level Transfers -->
+                                                        <div class="border-t pt-3 mt-3">
+                                                            <h6 class="font-medium text-gray-700 mb-2 text-sm">Or transfer specific weeks:</h6>
+                                                            <div class="space-y-2 max-h-40 overflow-y-auto">
+                                                                ${Object.keys(demandData?.weeklyRecords || {}).map(weekKey => {
+                                                                    const weekData = demandData.weeklyRecords[weekKey];
+                                                                    
+                                                                    return `
+                                                                        <div class="bg-white rounded border p-2 text-xs">
+                                                                            <div class="flex items-center justify-between mb-2">
+                                                                                <span class="font-medium">Week ${weekData.weekNumber} (Loc: ${weekData.sourceLocation})</span>
+                                                                                <span class="text-gray-600">${this.formatNumber(weekData.demand)} demand</span>
+                                                                            </div>
+                                                                            <div class="grid grid-cols-1 gap-1">
+                                                                                ${this.multiVariantDFUs[this.selectedDFU].variants.filter(tv => tv !== variant).map(targetVariant => {
+                                                                                    const isSelected = this.granularTransfers[this.selectedDFU] && 
+                                                                                        this.granularTransfers[this.selectedDFU][variant] && 
+                                                                                        this.granularTransfers[this.selectedDFU][variant][targetVariant] && 
+                                                                                        this.granularTransfers[this.selectedDFU][variant][targetVariant][weekKey] && 
+                                                                                        this.granularTransfers[this.selectedDFU][variant][targetVariant][weekKey].selected;
+                                                                                    
+                                                                                    const customQty = isSelected ? 
+                                                                                        this.granularTransfers[this.selectedDFU][variant][targetVariant][weekKey].customQuantity : null;
+                                                                                    
+                                                                                    return `
+                                                                                        <div class="flex items-center gap-2">
+                                                                                            <input type="checkbox" 
+                                                                                                   class="w-3 h-3" 
+                                                                                                   ${isSelected ? 'checked' : ''}
+                                                                                                   data-granular-toggle
+                                                                                                   data-dfu="${this.selectedDFU}"
+                                                                                                   data-source="${variant}"
+                                                                                                   data-target="${targetVariant}"
+                                                                                                   data-week="${weekKey}"
+                                                                                            >
+                                                                                            <span class="text-xs">→ ${targetVariant}</span>
+                                                                                            <input type="number" 
+                                                                                                   class="w-16 px-1 py-0 text-xs border rounded" 
+                                                                                                   placeholder="${weekData.demand}"
+                                                                                                   value="${customQty !== null ? customQty : ''}"
+                                                                                                   ${!isSelected ? 'disabled' : ''}
+                                                                                                   data-granular-qty
+                                                                                                   data-dfu="${this.selectedDFU}"
+                                                                                                   data-source="${variant}"
+                                                                                                   data-target="${targetVariant}"
+                                                                                                   data-week="${weekKey}"
+                                                                                            >
+                                                                                        </div>
+                                                                                    `;
+                                                                                }).join('')}
+                                                                            </div>
+                                                                        </div>
+                                                                    `;
+                                                                }).join('')}
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 `;
                                             }).join('')}
@@ -928,12 +1170,15 @@ class DemandTransferApp {
                                     </div>
                                     
                                     <!-- Action Buttons -->
-                                    ${((this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0) || this.bulkTransfers[this.selectedDFU]) ? `
+                                    ${((this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0) || 
+                                       this.bulkTransfers[this.selectedDFU] || 
+                                       (this.granularTransfers[this.selectedDFU] && Object.keys(this.granularTransfers[this.selectedDFU]).length > 0)) ? `
                                         <div class="p-3 bg-blue-50 rounded-lg">
                                             <div class="text-sm text-blue-800 mb-3">
                                                 ${this.bulkTransfers[this.selectedDFU] ? `
                                                     <p><strong>Bulk Transfer:</strong> All variants → ${this.bulkTransfers[this.selectedDFU]}</p>
-                                                ` : `
+                                                ` : ''}
+                                                ${this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0 ? `
                                                     <p><strong>Individual Transfers:</strong></p>
                                                     <ul class="list-disc list-inside ml-4">
                                                         ${Object.keys(this.transfers[this.selectedDFU]).map(sourceVariant => {
@@ -942,7 +1187,20 @@ class DemandTransferApp {
                                                                 `<li>${sourceVariant} → ${targetVariant}</li>` : '';
                                                         }).filter(Boolean).join('')}
                                                     </ul>
-                                                `}
+                                                ` : ''}
+                                                ${this.granularTransfers[this.selectedDFU] && Object.keys(this.granularTransfers[this.selectedDFU]).length > 0 ? `
+                                                    <p><strong>Granular Transfers:</strong></p>
+                                                    <ul class="list-disc list-inside ml-4 text-xs">
+                                                        ${Object.keys(this.granularTransfers[this.selectedDFU]).map(sourceVariant => {
+                                                            const sourceTransfers = this.granularTransfers[this.selectedDFU][sourceVariant];
+                                                            return Object.keys(sourceTransfers).map(targetVariant => {
+                                                                const weekTransfers = sourceTransfers[targetVariant];
+                                                                const weekCount = Object.keys(weekTransfers).length;
+                                                                return weekCount > 0 ? `<li>${sourceVariant} → ${targetVariant} (${weekCount} weeks)</li>` : '';
+                                                            }).filter(Boolean).join('');
+                                                        }).filter(Boolean).join('')}
+                                                    </ul>
+                                                ` : ''}
                                             </div>
                                             <div class="flex gap-2">
                                                 <button class="btn btn-success" id="executeBtn">
@@ -1046,6 +1304,31 @@ class DemandTransferApp {
                     }
                     this.render();
                 }
+            });
+        });
+        
+        // Granular transfer checkbox handlers
+        document.querySelectorAll('[data-granular-toggle]').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                const dfuCode = e.target.dataset.dfu;
+                const sourceVariant = e.target.dataset.source;
+                const targetVariant = e.target.dataset.target;
+                const weekKey = e.target.dataset.week;
+                
+                this.toggleGranularWeek(dfuCode, sourceVariant, targetVariant, weekKey);
+            });
+        });
+        
+        // Granular transfer quantity handlers
+        document.querySelectorAll('[data-granular-qty]').forEach(input => {
+            input.addEventListener('input', (e) => {
+                const dfuCode = e.target.dataset.dfu;
+                const sourceVariant = e.target.dataset.source;
+                const targetVariant = e.target.dataset.target;
+                const weekKey = e.target.dataset.week;
+                const quantity = e.target.value;
+                
+                this.updateGranularQuantity(dfuCode, sourceVariant, targetVariant, weekKey, quantity);
             });
         });
     }
