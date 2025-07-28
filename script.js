@@ -1,4 +1,27 @@
-init() {
+// DFU Demand Transfer Management Application
+// Version: 2.9.0 - Build: 2025-07-28-undo-fixed
+// Updated for new Excel format with proper column mapping
+
+class DemandTransferApp {
+    constructor() {
+        this.rawData = [];
+        this.multiVariantDFUs = {};
+        this.filteredDFUs = {};
+        this.selectedDFU = null;
+        this.searchTerm = '';
+        this.selectedPlantLocation = '';
+        this.availablePlantLocations = [];
+        this.transfers = {}; // Format: { dfuCode: { sourceVariant: targetVariant } }
+        this.bulkTransfers = {}; // Format: { dfuCode: targetVariant }
+        this.granularTransfers = {}; // Format: { dfuCode: { sourceVariant: { targetVariant: { weekKey: { selected: boolean, customQuantity: number } } } } }
+        this.completedTransfers = {}; // Format: { dfuCode: { type: 'bulk'|'individual', targetVariant, timestamp } }
+        this.isProcessed = false;
+        this.isLoading = false;
+        
+        this.init();
+    }
+    
+    init() {
         console.log('🚀 DFU Demand Transfer App v2.9.0 - Build: 2025-07-28-undo-fixed');
         console.log('📋 Fixed undo button for completed transfers');
         this.render();
