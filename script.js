@@ -4,8 +4,8 @@ const plantLocationFilter = document.getElementById('plantLocationFilter');
                 this.filterByPlantLocation(e.target.value);
             });
         }// DFU Demand Transfer Management Application
-// Version: 2.4.3 - Build: 2025-07-20-21:30
-// Last Updated: Fixed plant location filtering and part description display
+// Version: 2.4.5 - Build: 2025-07-20-21:40
+// Last Updated: Enhanced debugging for part description display issue
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
@@ -25,7 +25,8 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.4.3 - Build: 2025-07-20-21:30');
+        console.log('🚀 DFU Demand Transfer App v2.4.5 - Build: 2025-07-20-21:40');
+        console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh, plant filtering');
         console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
         this.render();
         this.attachEventListeners();
@@ -742,8 +743,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.4.3</p>
-                            <p>Build: 2025-07-20-21:30</p>
+                            <p>Version 2.4.5</p>
+                            <p>Build: 2025-07-20-21:40</p>
                         </div>
                     </div>
                 </div>
