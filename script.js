@@ -1,6 +1,6 @@
 // DFU Demand Transfer Management Application
 // Version: 2.9.0 - Build: 2025-07-28-undo-fixed
-// Updated for new Excel format with proper column mapping
+// Fixed undo button for completed transfers
 
 class DemandTransferApp {
     constructor() {
@@ -24,34 +24,6 @@ class DemandTransferApp {
     init() {
         console.log('🚀 DFU Demand Transfer App v2.9.0 - Build: 2025-07-28-undo-fixed');
         console.log('📋 Fixed undo button for completed transfers');
-        this.render();
-        this.attachEventListeners();
-    }// DFU Demand Transfer Management Application
-// Version: 2.6.0 - Build: 2025-07-28-updated
-// Updated for new Excel format with proper column mapping
-
-class DemandTransferApp {
-    constructor() {
-        this.rawData = [];
-        this.multiVariantDFUs = {};
-        this.filteredDFUs = {};
-        this.selectedDFU = null;
-        this.searchTerm = '';
-        this.selectedPlantLocation = '';
-        this.availablePlantLocations = [];
-        this.transfers = {}; // Format: { dfuCode: { sourceVariant: targetVariant } }
-        this.bulkTransfers = {}; // Format: { dfuCode: targetVariant }
-        this.granularTransfers = {}; // Format: { dfuCode: { sourceVariant: { targetVariant: { weekKey: { selected: boolean, customQuantity: number } } } } }
-        this.completedTransfers = {}; // Format: { dfuCode: { type: 'bulk'|'individual', targetVariant, timestamp } }
-        this.isProcessed = false;
-        this.isLoading = false;
-        
-        this.init();
-    }
-    
-    init() {
-        console.log('🚀 DFU Demand Transfer App v2.8.0 - Build: 2025-07-28-granular-working');
-        console.log('📋 Fixed granular transfers with proper transfer history and weekNumberColumn');
         this.render();
         this.attachEventListeners();
     }
@@ -1123,7 +1095,7 @@ class DemandTransferApp {
                                                         </svg>
                                                         Done
                                                     </span>
-                                                ` : (this.transfers[dfuCode] && Object.keys(this.transfers[dfuCode]).length > 0) || this.bulkTransfers[dfuCode] ? `
+                                                ` : (this.transfers[dfuCode] && Object.keys(this.transfers[dfuCode]).length > 0) || this.bulkTransfers[dfuCode] || (this.granularTransfers[dfuCode] && Object.keys(this.granularTransfers[dfuCode]).length > 0) ? `
                                                     <span class="inline-flex items-center gap-1 text-green-600 text-sm">
                                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1156,16 +1128,30 @@ class DemandTransferApp {
                                 ${this.multiVariantDFUs[this.selectedDFU].isCompleted ? `
                                     <!-- Completed Transfer Summary -->
                                     <div class="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
-                                        <h4 class="font-semibold text-green-800 mb-3">✓ Transfer Completed</h4>
-                                        <div class="text-sm text-green-700">
-                                            <p><strong>Type:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.type === 'bulk' ? 'Bulk Transfer' : 'Individual Transfers'}</p>
-                                            <p><strong>Date:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.timestamp}</p>
-                                            ${this.multiVariantDFUs[this.selectedDFU].completionInfo.type === 'bulk' ? `
-                                                <p><strong>Target Variant:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.targetVariant}</p>
-                                                <p><strong>Variants Consolidated:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.originalVariantCount - 1} → 1</p>
-                                            ` : `
-                                                <p><strong>Individual Transfers:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.transferCount} completed</p>
-                                            `}
+                                        <div class="flex justify-between items-start">
+                                            <div class="flex-1">
+                                                <h4 class="font-semibold text-green-800 mb-3">✓ Transfer Completed</h4>
+                                                <div class="text-sm text-green-700">
+                                                    <p><strong>Type:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.type === 'bulk' ? 'Bulk Transfer' : this.multiVariantDFUs[this.selectedDFU].completionInfo.type === 'granular' ? 'Granular Transfer' : 'Individual Transfers'}</p>
+                                                    <p><strong>Date:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.timestamp}</p>
+                                                    ${this.multiVariantDFUs[this.selectedDFU].completionInfo.type === 'bulk' ? `
+                                                        <p><strong>Target Variant:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.targetVariant}</p>
+                                                        <p><strong>Variants Consolidated:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.originalVariantCount - 1} → 1</p>
+                                                    ` : this.multiVariantDFUs[this.selectedDFU].completionInfo.type === 'granular' ? `
+                                                        <p><strong>Granular Transfers:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.transferCount} week-level transfers completed</p>
+                                                    ` : `
+                                                        <p><strong>Individual Transfers:</strong> ${this.multiVariantDFUs[this.selectedDFU].completionInfo.transferCount} completed</p>
+                                                    `}
+                                                </div>
+                                            </div>
+                                            <button class="px-3 py-1 text-xs bg-orange-100 text-orange-800 rounded hover:bg-orange-200 transition-colors" 
+                                                    id="undoTransferBtn"
+                                                    title="Undo this transfer and allow modifications">
+                                                <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
+                                                </svg>
+                                                Undo
+                                            </button>
                                         </div>
                                     </div>
                                     
@@ -1378,6 +1364,7 @@ class DemandTransferApp {
                     <ul class="text-sm text-blue-700 space-y-1">
                         <li><strong>Bulk Transfer:</strong> Click a purple button to transfer all variants to that target</li>
                         <li><strong>Individual Transfer:</strong> Use dropdowns to specify where each variant should go</li>
+                        <li><strong>Granular Transfer:</strong> Select specific weeks to transfer partial demand</li>
                         <li><strong>Execute:</strong> Click "Execute Transfer" to apply your chosen transfers</li>
                         <li><strong>Export:</strong> Export the updated data when you're done with all transfers</li>
                     </ul>
