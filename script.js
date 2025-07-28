@@ -4,8 +4,8 @@ const plantLocationFilter = document.getElementById('plantLocationFilter');
                 this.filterByPlantLocation(e.target.value);
             });
         }// DFU Demand Transfer Management Application
-// Version: 2.4.2 - Build: 2025-07-20-21:25
-// Last Updated: Removed file format detection, using fixed column names for new format
+// Version: 2.4.3 - Build: 2025-07-20-21:30
+// Last Updated: Fixed plant location filtering and part description display
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
@@ -25,7 +25,7 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.4.2 - Build: 2025-07-20-21:25');
+        console.log('🚀 DFU Demand Transfer App v2.4.3 - Build: 2025-07-20-21:30');
         console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
         this.render();
         this.attachEventListeners();
@@ -152,10 +152,15 @@ class DemandTransferApp {
         
         // Filter data by plant location if selected
         const filteredData = this.selectedPlantLocation ? 
-            data.filter(record => record[plantLocationColumn].toString() === this.selectedPlantLocation.toString()) : 
+            data.filter(record => record[plantLocationColumn] && record[plantLocationColumn].toString() === this.selectedPlantLocation.toString()) : 
             data;
             
+        console.log('Total data records:', data.length);
         console.log('Filtered data records:', filteredData.length, 'for plant location:', this.selectedPlantLocation || 'All');
+        
+        if (this.selectedPlantLocation && filteredData.length === 0) {
+            console.warn('No records found for plant location:', this.selectedPlantLocation);
+        }
         
         filteredData.forEach(record => {
             const dfuCode = record[dfuColumn];
@@ -261,7 +266,13 @@ class DemandTransferApp {
     }
     
     filterByPlantLocation(plantLocation) {
+        console.log('Filtering by plant location:', plantLocation);
         this.selectedPlantLocation = plantLocation;
+        
+        // Clear existing data and re-process with filter
+        this.multiVariantDFUs = {};
+        this.filteredDFUs = {};
+        
         // Re-process data with the new plant location filter
         this.processMultiVariantDFUs(this.rawData);
         this.render();
@@ -723,8 +734,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.4.2</p>
-                            <p>Build: 2025-07-20-21:25</p>
+                            <p>Version 2.4.3</p>
+                            <p>Build: 2025-07-20-21:30</p>
                         </div>
                     </div>
                 </div>
@@ -848,7 +859,7 @@ class DemandTransferApp {
                                                         <div class="flex justify-between items-center">
                                                             <div>
                                                                 <h5 class="font-medium text-gray-800">Part: ${variant}</h5>
-                                                                <p class="text-xs text-gray-500 mb-1">${demandData?.partDescription || ''}</p>
+                                                                <p class="text-xs text-gray-500 mb-1 max-w-md">${demandData?.partDescription || 'No description'}</p>
                                                                 <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records</p>
                                                             </div>
                                                             <div class="text-right">
@@ -899,7 +910,7 @@ class DemandTransferApp {
                                                         <div class="flex justify-between items-center mb-2">
                                                             <div>
                                                                 <h5 class="font-medium text-gray-800">Part: ${variant}</h5>
-                                                                <p class="text-xs text-gray-500 mb-1">${demandData?.partDescription || ''}</p>
+                                                                <p class="text-xs text-gray-500 mb-1 max-w-md">${demandData?.partDescription || 'No description'}</p>
                                                                 <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records • ${this.formatNumber(demandData?.totalDemand || 0)} demand</p>
                                                             </div>
                                                         </div>
