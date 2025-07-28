@@ -1,4 +1,9 @@
-// DFU Demand Transfer Management Application
+init() {
+        console.log('🚀 DFU Demand Transfer App v2.9.0 - Build: 2025-07-28-undo-fixed');
+        console.log('📋 Fixed undo button for completed transfers');
+        this.render();
+        this.attachEventListeners();
+    }// DFU Demand Transfer Management Application
 // Version: 2.6.0 - Build: 2025-07-28-updated
 // Updated for new Excel format with proper column mapping
 
@@ -1028,8 +1033,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.8.0</p>
-                            <p>Build: 2025-07-28-granular-working</p>
+                            <p>Version 2.9.0</p>
+                            <p>Build: 2025-07-28-undo-fixed</p>
                         </div>
                     </div>
                 </div>
