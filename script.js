@@ -4,8 +4,8 @@ const plantLocationFilter = document.getElementById('plantLocationFilter');
                 this.filterByPlantLocation(e.target.value);
             });
         }// DFU Demand Transfer Management Application
-// Version: 2.4.1 - Build: 2025-07-20-21:20
-// Last Updated: Improved column detection with better error handling and logging
+// Version: 2.4.2 - Build: 2025-07-20-21:25
+// Last Updated: Removed file format detection, using fixed column names for new format
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
@@ -25,7 +25,7 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.4.1 - Build: 2025-07-20-21:20');
+        console.log('🚀 DFU Demand Transfer App v2.4.2 - Build: 2025-07-20-21:25');
         console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
         this.render();
         this.attachEventListeners();
@@ -126,65 +126,23 @@ class DemandTransferApp {
         console.log('Available columns:', Object.keys(sampleRecord));
         
         const columns = Object.keys(sampleRecord);
-        console.log('All available columns:', columns);
+        console.log('Available columns:', columns);
+        console.log('Sample record:', sampleRecord);
         
-        // More flexible column detection
-        const dfuColumn = columns.find(col => 
-            col.toLowerCase().includes('dfu')
-        ) || 'DFU';
+        // Use expected column names directly for the new file format
+        const dfuColumn = 'DFU';
+        const partNumberColumn = 'Product Number';
+        const demandColumn = 'weekly fcst';
+        const partDescriptionColumn = 'PartDescription';
+        const plantLocationColumn = 'Plant Location';
         
-        const partNumberColumn = columns.find(col => 
-            col.toLowerCase().includes('product') && col.toLowerCase().includes('number')
-        ) || columns.find(col => 
-            col.toLowerCase().includes('part') && col.toLowerCase().includes('number')
-        ) || 'Product Number';
-        
-        const demandColumn = columns.find(col => 
-            col.toLowerCase().includes('weekly') && col.toLowerCase().includes('fcst')
-        ) || columns.find(col => 
-            col.toLowerCase().includes('fcst')
-        ) || columns.find(col => 
-            col.toLowerCase().includes('demand')
-        ) || 'weekly fcst';
-        
-        const partDescriptionColumn = columns.find(col => 
-            col.toLowerCase().includes('part') && col.toLowerCase().includes('description')
-        ) || columns.find(col => 
-            col.toLowerCase().includes('description')
-        ) || 'PartDescription';
-        
-        const plantLocationColumn = columns.find(col => 
-            col.toLowerCase().includes('plant') && col.toLowerCase().includes('location')
-        ) || 'Plant Location';
-        
-        console.log('Detected columns:', { 
+        console.log('Using fixed columns:', { 
             dfuColumn, 
             partNumberColumn, 
             demandColumn, 
             partDescriptionColumn, 
             plantLocationColumn 
         });
-        
-        // Check if we found the essential columns
-        const foundDFU = sampleRecord[dfuColumn] !== undefined;
-        const foundPartNumber = sampleRecord[partNumberColumn] !== undefined;
-        const foundDemand = sampleRecord[demandColumn] !== undefined;
-        
-        console.log('Column validation:', { 
-            foundDFU, 
-            foundPartNumber, 
-            foundDemand,
-            dfuValue: sampleRecord[dfuColumn],
-            partNumberValue: sampleRecord[partNumberColumn],
-            demandValue: sampleRecord[demandColumn]
-        });
-        
-        if (!foundDFU || !foundPartNumber || !foundDemand) {
-            console.error('Missing required columns. Available columns:', columns);
-            console.error('Sample record:', sampleRecord);
-            this.showNotification(`Could not find required columns. Available: ${columns.join(', ')}`, 'error');
-            return;
-        }
         
         // Extract unique plant locations for filtering
         this.availablePlantLocations = [...new Set(data.map(record => record[plantLocationColumn]))].filter(Boolean).sort();
@@ -765,8 +723,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.4.1</p>
-                            <p>Build: 2025-07-20-21:20</p>
+                            <p>Version 2.4.2</p>
+                            <p>Build: 2025-07-20-21:25</p>
                         </div>
                     </div>
                 </div>
