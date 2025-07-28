@@ -1,6 +1,11 @@
-// DFU Demand Transfer Management Application
-// Version: 2.3.2 - Build: 2025-07-20-21:08
-// Last Updated: Added PIPO prefix to Transfer History for tool identification
+const plantLocationFilter = document.getElementById('plantLocationFilter');
+        if (plantLocationFilter) {
+            plantLocationFilter.addEventListener('change', (e) => {
+                this.filterByPlantLocation(e.target.value);
+            });
+        }// DFU Demand Transfer Management Application
+// Version: 2.4.0 - Build: 2025-07-20-21:15
+// Last Updated: Added Plant Location filtering and Part Description display
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
@@ -8,6 +13,8 @@ class DemandTransferApp {
         this.filteredDFUs = {};
         this.selectedDFU = null;
         this.searchTerm = '';
+        this.selectedPlantLocation = '';
+        this.availablePlantLocations = [];
         this.transfers = {}; // Format: { dfuCode: { sourceVariant: targetVariant } }
         this.bulkTransfers = {}; // Format: { dfuCode: targetVariant }
         this.completedTransfers = {}; // Format: { dfuCode: { type: 'bulk'|'individual', targetVariant, timestamp } }
@@ -18,7 +25,7 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.3.2 - Build: 2025-07-20-21:08');
+        console.log('🚀 DFU Demand Transfer App v2.4.0 - Build: 2025-07-20-21:15');
         console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
         this.render();
         this.attachEventListeners();
@@ -128,17 +135,35 @@ class DemandTransferApp {
             col.toLowerCase().includes('fcst') || 
             col.toLowerCase().includes('demand')
         ) || 'weekly fcst';
+        const partDescriptionColumn = columns.find(col => 
+            col.toLowerCase().includes('description') || 
+            col.toLowerCase().includes('desc')
+        ) || 'PartDescription';
+        const plantLocationColumn = columns.find(col => 
+            col.toLowerCase().includes('plant') && col.toLowerCase().includes('location')
+        ) || 'Plant Location';
         
-        console.log('Using columns:', { dfuColumn, partNumberColumn, demandColumn });
+        console.log('Using columns:', { dfuColumn, partNumberColumn, demandColumn, partDescriptionColumn, plantLocationColumn });
         
         if (!sampleRecord[dfuColumn] || !sampleRecord[partNumberColumn] || !sampleRecord[demandColumn]) {
             this.showNotification(`Could not find required columns. Found: ${Object.keys(sampleRecord).join(', ')}`, 'error');
             return;
         }
         
+        // Extract unique plant locations for filtering
+        this.availablePlantLocations = [...new Set(data.map(record => record[plantLocationColumn]))].filter(Boolean).sort();
+        console.log('Available Plant Locations:', this.availablePlantLocations);
+        
         const groupedByDFU = {};
         
-        data.forEach(record => {
+        // Filter data by plant location if selected
+        const filteredData = this.selectedPlantLocation ? 
+            data.filter(record => record[plantLocationColumn].toString() === this.selectedPlantLocation.toString()) : 
+            data;
+            
+        console.log('Filtered data records:', filteredData.length, 'for plant location:', this.selectedPlantLocation || 'All');
+        
+        filteredData.forEach(record => {
             const dfuCode = record[dfuColumn];
             if (dfuCode) {
                 if (!groupedByDFU[dfuCode]) {
@@ -238,6 +263,13 @@ class DemandTransferApp {
         } else {
             this.filteredDFUs = this.multiVariantDFUs;
         }
+        this.render();
+    }
+    
+    filterByPlantLocation(plantLocation) {
+        this.selectedPlantLocation = plantLocation;
+        // Re-process data with the new plant location filter
+        this.processMultiVariantDFUs(this.rawData);
         this.render();
     }
     
@@ -697,8 +729,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.3.2</p>
-                            <p>Build: 2025-07-20-21:08</p>
+                            <p>Version 2.4.0</p>
+                            <p>Build: 2025-07-20-21:15</p>
                         </div>
                     </div>
                 </div>
@@ -715,6 +747,16 @@ class DemandTransferApp {
                             class="search-input"
                             id="searchInput"
                         >
+                    </div>
+                    <div class="relative">
+                        <select class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" id="plantLocationFilter">
+                            <option value="">All Plant Locations</option>
+                            ${this.availablePlantLocations.map(location => `
+                                <option value="${location}" ${this.selectedPlantLocation === location.toString() ? 'selected' : ''}>
+                                    Plant ${location}
+                                </option>
+                            `).join('')}
+                        </select>
                     </div>
                     <button class="btn btn-success" id="exportBtn">
                         <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -812,6 +854,7 @@ class DemandTransferApp {
                                                         <div class="flex justify-between items-center">
                                                             <div>
                                                                 <h5 class="font-medium text-gray-800">Part: ${variant}</h5>
+                                                                <p class="text-xs text-gray-500 mb-1">${demandData?.partDescription || ''}</p>
                                                                 <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records</p>
                                                             </div>
                                                             <div class="text-right">
@@ -862,6 +905,7 @@ class DemandTransferApp {
                                                         <div class="flex justify-between items-center mb-2">
                                                             <div>
                                                                 <h5 class="font-medium text-gray-800">Part: ${variant}</h5>
+                                                                <p class="text-xs text-gray-500 mb-1">${demandData?.partDescription || ''}</p>
                                                                 <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records • ${this.formatNumber(demandData?.totalDemand || 0)} demand</p>
                                                             </div>
                                                         </div>
