@@ -1379,6 +1379,7 @@ class DemandTransferApp {
                     this.setIndividualTransfer(this.selectedDFU, sourceVariant, targetVariant);
                     
                     // Show granular section for this variant
+                    console.log(`All granular sections:`, document.querySelectorAll('[id^="granular-"]'));
                     const granularSection = document.getElementById(`granular-${sourceVariant}`);
                     console.log(`Looking for granular section: granular-${sourceVariant}`, granularSection);
                     
@@ -1387,6 +1388,7 @@ class DemandTransferApp {
                         console.log(`Demand data for ${sourceVariant}:`, demandData);
                         
                         if (demandData && demandData.weeklyRecords) {
+                            console.log(`Weekly records:`, Object.keys(demandData.weeklyRecords));
                             granularSection.innerHTML = `
                                 <h6 class="font-medium text-gray-700 mb-2 text-sm">Or transfer specific weeks to ${targetVariant}:</h6>
                                 <div class="space-y-2 max-h-40 overflow-y-auto">
@@ -1442,7 +1444,14 @@ class DemandTransferApp {
                             setTimeout(() => {
                                 this.attachGranularEventListeners();
                             }, 100);
+                        } else {
+                            console.log(`No weekly records found for ${sourceVariant}`);
+                            granularSection.innerHTML = `<p class="text-gray-500 text-sm">No weekly data available for granular transfers.</p>`;
                         }
+                    } else {
+                        console.error(`Granular section not found: granular-${sourceVariant}`);
+                        console.log('Available elements with granular IDs:', 
+                            Array.from(document.querySelectorAll('[id*="granular"]')).map(el => el.id));
                     }
                     
                     // Update action buttons
