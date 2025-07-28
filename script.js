@@ -1317,6 +1317,15 @@ class DemandTransferApp {
         `;
         
         this.attachEventListeners();
+        
+        // Debug: Check if granular containers were created
+        if (this.selectedDFU && this.multiVariantDFUs[this.selectedDFU]) {
+            console.log('Post-render check for granular containers:');
+            this.multiVariantDFUs[this.selectedDFU].variants.forEach(variant => {
+                const container = document.getElementById(`granular-${variant}`);
+                console.log(`Container granular-${variant}:`, container ? 'EXISTS' : 'MISSING');
+            });
+        }
     }
     
     attachEventListeners() {
