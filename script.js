@@ -4,8 +4,8 @@ const plantLocationFilter = document.getElementById('plantLocationFilter');
                 this.filterByPlantLocation(e.target.value);
             });
         }// DFU Demand Transfer Management Application
-// Version: 2.4.5 - Build: 2025-07-20-21:40
-// Last Updated: Enhanced debugging for part description display issue
+// Version: 2.5.0 - Build: 2025-07-20-21:45
+// Last Updated: Added Plant Location display in DFU list and fixed part description display
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
@@ -797,7 +797,7 @@ class DemandTransferApp {
                                     <div class="dfu-card ${this.selectedDFU === dfuCode ? 'selected' : ''}" data-dfu="${dfuCode}">
                                         <div class="flex justify-between items-start">
                                             <div>
-                                                <h4 class="font-medium text-gray-800">DFU: ${dfuCode}</h4>
+                                                <h4 class="font-medium text-gray-800">DFU: ${dfuCode}${dfuData.plantLocation ? ` (${dfuData.plantLocation})` : ''}</h4>
                                                 <p class="text-sm text-gray-600">
                                                     ${dfuData.isCompleted ? `1 variant (consolidated)` : `${dfuData.variants.length} variants`}
                                                 </p>
@@ -832,7 +832,7 @@ class DemandTransferApp {
                         ${this.selectedDFU && this.multiVariantDFUs[this.selectedDFU] ? `
                             <div>
                                 <h3 class="font-semibold text-gray-800 mb-4">
-                                    DFU: ${this.selectedDFU} - Variant Details
+                                    DFU: ${this.selectedDFU}${this.multiVariantDFUs[this.selectedDFU].plantLocation ? ` (Plant: ${this.multiVariantDFUs[this.selectedDFU].plantLocation})` : ''} - Variant Details
                                     ${this.multiVariantDFUs[this.selectedDFU].isCompleted ? `
                                         <span class="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
                                             ✓ Transfer Complete
@@ -866,9 +866,9 @@ class DemandTransferApp {
                                                 return `
                                                     <div class="border rounded-lg p-3 bg-white">
                                                         <div class="flex justify-between items-center">
-                                                            <div>
+                                                            <div class="flex-1">
                                                                 <h5 class="font-medium text-gray-800">Part: ${variant}</h5>
-                                                                <p class="text-xs text-gray-500 mb-1 max-w-md">${demandData?.partDescription || 'No description'}</p>
+                                                                <p class="text-xs text-gray-500 mb-1 max-w-md break-words">${demandData?.partDescription || demandData?.description || 'Description not available'}</p>
                                                                 <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records</p>
                                                             </div>
                                                             <div class="text-right">
@@ -917,9 +917,9 @@ class DemandTransferApp {
                                                 return `
                                                     <div class="border rounded-lg p-3 bg-gray-50">
                                                         <div class="flex justify-between items-center mb-2">
-                                                            <div>
+                                                            <div class="flex-1">
                                                                 <h5 class="font-medium text-gray-800">Part: ${variant}</h5>
-                                                                <p class="text-xs text-gray-500 mb-1 max-w-md">${demandData?.partDescription || 'No description'}</p>
+                                                                <p class="text-xs text-gray-500 mb-1 max-w-md break-words">${demandData?.partDescription || demandData?.description || 'Description not available'}</p>
                                                                 <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records • ${this.formatNumber(demandData?.totalDemand || 0)} demand</p>
                                                             </div>
                                                         </div>
