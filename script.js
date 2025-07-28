@@ -26,7 +26,7 @@ class DemandTransferApp {
     
     init() {
         console.log('🚀 DFU Demand Transfer App v2.4.3 - Build: 2025-07-20-21:30');
-        console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
+        console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh, Part Description');
         this.render();
         this.attachEventListeners();
     }
