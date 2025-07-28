@@ -1318,6 +1318,9 @@ class DemandTransferApp {
         
         this.attachEventListeners();
         
+        // FORCE CREATE granular containers if they don't exist
+        this.ensureGranularContainers();
+        
         // Debug: Check if granular containers were created after DOM update
         setTimeout(() => {
             if (this.selectedDFU && this.multiVariantDFUs[this.selectedDFU]) {
@@ -1336,6 +1339,47 @@ class DemandTransferApp {
                 console.log('All elements with "granular" in ID:', Array.from(allGranular).map(el => el.id));
             }
         }, 100);
+    }
+    
+    ensureGranularContainers() {
+        if (this.selectedDFU && this.multiVariantDFUs[this.selectedDFU]) {
+            console.log('=== FORCE CREATING GRANULAR CONTAINERS ===');
+            
+            this.multiVariantDFUs[this.selectedDFU].variants.forEach(variant => {
+                // Find the parent container for this variant
+                const selectElement = document.querySelector(`[data-source-variant="${variant}"]`);
+                
+                if (selectElement) {
+                    const parentDiv = selectElement.closest('.border.rounded-lg');
+                    
+                    if (parentDiv) {
+                        // Check if granular container already exists
+                        let granularContainer = document.getElementById(`granular-${variant}`);
+                        
+                        if (!granularContainer) {
+                            console.log(`Creating missing granular container for ${variant}`);
+                            
+                            // Create the granular container
+                            granularContainer = document.createElement('div');
+                            granularContainer.id = `granular-${variant}`;
+                            granularContainer.className = 'border-t pt-3 mt-3 granular-section';
+                            granularContainer.style.minHeight = '10px';
+                            
+                            // Add it to the parent div
+                            parentDiv.appendChild(granularContainer);
+                            
+                            console.log(`✓ Created granular-${variant}`);
+                        } else {
+                            console.log(`✓ granular-${variant} already exists`);
+                        }
+                    } else {
+                        console.log(`✗ Could not find parent div for ${variant}`);
+                    }
+                } else {
+                    console.log(`✗ Could not find select element for ${variant}`);
+                }
+            });
+        }
     }
     
     attachEventListeners() {
