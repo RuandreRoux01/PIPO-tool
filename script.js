@@ -22,8 +22,8 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.7.0 - Build: 2025-07-28-granular-fix');
-        console.log('📋 Fixed granular week display and improved scroll behavior');
+        console.log('🚀 DFU Demand Transfer App v2.8.0 - Build: 2025-07-28-granular-working');
+        console.log('📋 Fixed granular transfers with proper transfer history and weekNumberColumn');
         this.render();
         this.attachEventListeners();
     }
@@ -694,7 +694,7 @@ class DemandTransferApp {
                                 const oldDemand = parseFloat(targetRecord[demandColumn]) || 0;
                                 targetRecord[demandColumn] = oldDemand + transferAmount;
                                 
-                                // Add transfer history
+                                // Add transfer history with proper week number format
                                 const existingHistory = targetRecord['Transfer History'] || '';
                                 const newHistoryEntry = `[W${weekNumber} ${sourceVariant} → ${transferAmount} @ ${timestamp}]`;
                                 const pipoPrefix = existingHistory.startsWith('PIPO') ? '' : 'PIPO ';
@@ -703,6 +703,15 @@ class DemandTransferApp {
                                 
                                 // Update source record
                                 sourceRecord[demandColumn] = originalDemand - transferAmount;
+                                
+                                // Add transfer history to source record if partial transfer
+                                if (transferAmount < originalDemand) {
+                                    const sourceExistingHistory = sourceRecord['Transfer History'] || '';
+                                    const sourceHistoryEntry = `[W${weekNumber} ${transferAmount} transferred to ${targetVariant} @ ${timestamp}]`;
+                                    const sourcePipoPrefix = sourceExistingHistory.startsWith('PIPO') ? '' : 'PIPO ';
+                                    sourceRecord['Transfer History'] = sourceExistingHistory ? 
+                                        `${sourceExistingHistory} ${sourceHistoryEntry}` : `${sourcePipoPrefix}${sourceHistoryEntry}`;
+                                }
                                 
                             } else {
                                 // Create new record by modifying source
@@ -720,6 +729,13 @@ class DemandTransferApp {
                                     
                                     // Update source record
                                     sourceRecord[demandColumn] = originalDemand - transferAmount;
+                                    
+                                    // Add transfer history to source record
+                                    const sourceExistingHistory = sourceRecord['Transfer History'] || '';
+                                    const sourceHistoryEntry = `[W${weekNumber} ${transferAmount} transferred to ${targetVariant} @ ${timestamp}]`;
+                                    const sourcePipoPrefix = sourceExistingHistory.startsWith('PIPO') ? '' : 'PIPO ';
+                                    sourceRecord['Transfer History'] = sourceExistingHistory ? 
+                                        `${sourceExistingHistory} ${sourceHistoryEntry}` : `${sourcePipoPrefix}${sourceHistoryEntry}`;
                                     
                                     // Add new record
                                     this.rawData.push(newRecord);
@@ -819,7 +835,7 @@ class DemandTransferApp {
             const demand = parseFloat(record[demandColumn]) || 0;
             const transferHistory = record['Transfer History'] || '';
             
-            // Create a unique key for this combination
+            // Create a unique key for this combination using weekNumber instead of calendarWeek
             const key = `${partNumber}|${weekNumber}|${sourceLocation}`;
             
             if (consolidatedMap.has(key)) {
@@ -987,8 +1003,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.7.0</p>
-                            <p>Build: 2025-07-28-granular-fix</p>
+                            <p>Version 2.8.0</p>
+                            <p>Build: 2025-07-28-granular-working</p>
                         </div>
                     </div>
                 </div>
