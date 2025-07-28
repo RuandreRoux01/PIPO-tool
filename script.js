@@ -349,7 +349,10 @@ class DemandTransferApp {
             delete this.granularTransfers[dfuCode][sourceVariant];
         }
         
-        this.render();
+        // Don't render immediately - let the caller handle it to preserve scroll
+        if (targetVariant === '') {
+            this.render();
+        }
     }
     
     toggleGranularWeek(dfuCode, sourceVariant, targetVariant, weekKey) {
@@ -379,7 +382,8 @@ class DemandTransferApp {
             delete this.transfers[dfuCode][sourceVariant];
         }
         
-        this.render();
+        // Update UI without full re-render to preserve scroll position
+        this.updateActionButtonsOnly();
     }
     
     updateGranularQuantity(dfuCode, sourceVariant, targetVariant, weekKey, quantity) {
@@ -390,6 +394,81 @@ class DemandTransferApp {
             
             this.granularTransfers[dfuCode][sourceVariant][targetVariant][weekKey].customQuantity = 
                 quantity === '' ? null : parseFloat(quantity);
+            
+            // Update action buttons only
+            this.updateActionButtonsOnly();
+        }
+    }
+    
+    updateActionButtonsOnly() {
+        // Only update the action buttons section without full re-render
+        const actionButtonsContainer = document.querySelector('.action-buttons-container');
+        if (actionButtonsContainer && this.selectedDFU) {
+            const hasTransfers = ((this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0) || 
+                                 this.bulkTransfers[this.selectedDFU] || 
+                                 (this.granularTransfers[this.selectedDFU] && Object.keys(this.granularTransfers[this.selectedDFU]).length > 0));
+            
+            if (hasTransfers) {
+                actionButtonsContainer.innerHTML = `
+                    <div class="p-3 bg-blue-50 rounded-lg">
+                        <div class="text-sm text-blue-800 mb-3">
+                            ${this.bulkTransfers[this.selectedDFU] ? `
+                                <p><strong>Bulk Transfer:</strong> All variants → ${this.bulkTransfers[this.selectedDFU]}</p>
+                            ` : ''}
+                            ${this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0 ? `
+                                <p><strong>Individual Transfers:</strong></p>
+                                <ul class="list-disc list-inside ml-4">
+                                    ${Object.keys(this.transfers[this.selectedDFU]).map(sourceVariant => {
+                                        const targetVariant = this.transfers[this.selectedDFU][sourceVariant];
+                                        return sourceVariant !== targetVariant ? 
+                                            `<li>${sourceVariant} → ${targetVariant}</li>` : '';
+                                    }).filter(Boolean).join('')}
+                                </ul>
+                            ` : ''}
+                            ${this.granularTransfers[this.selectedDFU] && Object.keys(this.granularTransfers[this.selectedDFU]).length > 0 ? `
+                                <p><strong>Granular Transfers:</strong></p>
+                                <ul class="list-disc list-inside ml-4 text-xs">
+                                    ${Object.keys(this.granularTransfers[this.selectedDFU]).map(sourceVariant => {
+                                        const sourceTransfers = this.granularTransfers[this.selectedDFU][sourceVariant];
+                                        return Object.keys(sourceTransfers).map(targetVariant => {
+                                            const weekTransfers = sourceTransfers[targetVariant];
+                                            const weekCount = Object.keys(weekTransfers).length;
+                                            return weekCount > 0 ? `<li>${sourceVariant} → ${targetVariant} (${weekCount} weeks)</li>` : '';
+                                        }).filter(Boolean).join('');
+                                    }).filter(Boolean).join('')}
+                                </ul>
+                            ` : ''}
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="btn btn-success" id="executeBtn">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                </svg>
+                                Execute Transfer
+                            </button>
+                            <button class="btn btn-secondary" id="cancelBtn">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                // Re-attach button event listeners
+                const executeBtn = document.getElementById('executeBtn');
+                if (executeBtn) {
+                    executeBtn.addEventListener('click', () => this.executeTransfer(this.selectedDFU));
+                }
+                
+                const cancelBtn = document.getElementById('cancelBtn');
+                if (cancelBtn) {
+                    cancelBtn.addEventListener('click', () => this.cancelTransfer(this.selectedDFU));
+                }
+            } else {
+                actionButtonsContainer.innerHTML = '';
+            }
         }
     }
     
@@ -1094,7 +1173,7 @@ class DemandTransferApp {
                                                         
                                                         <div class="flex items-center gap-2 text-sm mb-3">
                                                             <span class="text-gray-600">Transfer all to:</span>
-                                                            <select class="px-2 py-1 border rounded text-sm" data-source-variant="${variant}">
+                                                            <select class="px-2 py-1 border rounded text-sm" data-source-variant="${variant}" id="select-${variant}">
                                                                 <option value="">Select target...</option>
                                                                 ${this.multiVariantDFUs[this.selectedDFU].variants.map(targetVariant => `
                                                                     <option value="${targetVariant}" ${currentTransfer === targetVariant ? 'selected' : ''}>
@@ -1107,117 +1186,114 @@ class DemandTransferApp {
                                                             ` : ''}
                                                         </div>
                                                         
-                                                        <!-- Granular Week-Level Transfers -->
-                                                        <div class="border-t pt-3 mt-3">
-                                                            <h6 class="font-medium text-gray-700 mb-2 text-sm">Or transfer specific weeks:</h6>
-                                                            <div class="space-y-2 max-h-40 overflow-y-auto">
-                                                                ${Object.keys(demandData?.weeklyRecords || {}).map(weekKey => {
-                                                                    const weekData = demandData.weeklyRecords[weekKey];
-                                                                    
-                                                                    return `
-                                                                        <div class="bg-white rounded border p-2 text-xs">
-                                                                            <div class="flex items-center justify-between mb-2">
-                                                                                <span class="font-medium">Week ${weekData.weekNumber} (Loc: ${weekData.sourceLocation})</span>
-                                                                                <span class="text-gray-600">${this.formatNumber(weekData.demand)} demand</span>
+                                                        <!-- Granular Week-Level Transfers - Only show if target selected -->
+                                                        ${currentTransfer && currentTransfer !== variant ? `
+                                                            <div class="border-t pt-3 mt-3" id="granular-${variant}">
+                                                                <h6 class="font-medium text-gray-700 mb-2 text-sm">Or transfer specific weeks to ${currentTransfer}:</h6>
+                                                                <div class="space-y-2 max-h-40 overflow-y-auto">
+                                                                    ${Object.keys(demandData?.weeklyRecords || {}).map(weekKey => {
+                                                                        const weekData = demandData.weeklyRecords[weekKey];
+                                                                        const isSelected = this.granularTransfers[this.selectedDFU] && 
+                                                                            this.granularTransfers[this.selectedDFU][variant] && 
+                                                                            this.granularTransfers[this.selectedDFU][variant][currentTransfer] && 
+                                                                            this.granularTransfers[this.selectedDFU][variant][currentTransfer][weekKey] && 
+                                                                            this.granularTransfers[this.selectedDFU][variant][currentTransfer][weekKey].selected;
+                                                                        
+                                                                        const customQty = isSelected ? 
+                                                                            this.granularTransfers[this.selectedDFU][variant][currentTransfer][weekKey].customQuantity : null;
+                                                                        
+                                                                        return `
+                                                                            <div class="bg-white rounded border p-2 text-xs">
+                                                                                <div class="flex items-center justify-between mb-2">
+                                                                                    <span class="font-medium">Week ${weekData.weekNumber} (Loc: ${weekData.sourceLocation})</span>
+                                                                                    <span class="text-gray-600">${this.formatNumber(weekData.demand)} demand</span>
+                                                                                </div>
+                                                                                <div class="flex items-center gap-2">
+                                                                                    <input type="checkbox" 
+                                                                                           class="w-3 h-3" 
+                                                                                           ${isSelected ? 'checked' : ''}
+                                                                                           data-granular-toggle
+                                                                                           data-dfu="${this.selectedDFU}"
+                                                                                           data-source="${variant}"
+                                                                                           data-target="${currentTransfer}"
+                                                                                           data-week="${weekKey}"
+                                                                                    >
+                                                                                    <span class="text-xs">Transfer to ${currentTransfer}</span>
+                                                                                    <input type="number" 
+                                                                                           class="w-16 px-1 py-0 text-xs border rounded" 
+                                                                                           placeholder="${weekData.demand}"
+                                                                                           value="${customQty !== null ? customQty : ''}"
+                                                                                           ${!isSelected ? 'disabled' : ''}
+                                                                                           data-granular-qty
+                                                                                           data-dfu="${this.selectedDFU}"
+                                                                                           data-source="${variant}"
+                                                                                           data-target="${currentTransfer}"
+                                                                                           data-week="${weekKey}"
+                                                                                    >
+                                                                                </div>
                                                                             </div>
-                                                                            <div class="grid grid-cols-1 gap-1">
-                                                                                ${this.multiVariantDFUs[this.selectedDFU].variants.filter(tv => tv !== variant).map(targetVariant => {
-                                                                                    const isSelected = this.granularTransfers[this.selectedDFU] && 
-                                                                                        this.granularTransfers[this.selectedDFU][variant] && 
-                                                                                        this.granularTransfers[this.selectedDFU][variant][targetVariant] && 
-                                                                                        this.granularTransfers[this.selectedDFU][variant][targetVariant][weekKey] && 
-                                                                                        this.granularTransfers[this.selectedDFU][variant][targetVariant][weekKey].selected;
-                                                                                    
-                                                                                    const customQty = isSelected ? 
-                                                                                        this.granularTransfers[this.selectedDFU][variant][targetVariant][weekKey].customQuantity : null;
-                                                                                    
-                                                                                    return `
-                                                                                        <div class="flex items-center gap-2">
-                                                                                            <input type="checkbox" 
-                                                                                                   class="w-3 h-3" 
-                                                                                                   ${isSelected ? 'checked' : ''}
-                                                                                                   data-granular-toggle
-                                                                                                   data-dfu="${this.selectedDFU}"
-                                                                                                   data-source="${variant}"
-                                                                                                   data-target="${targetVariant}"
-                                                                                                   data-week="${weekKey}"
-                                                                                            >
-                                                                                            <span class="text-xs">→ ${targetVariant}</span>
-                                                                                            <input type="number" 
-                                                                                                   class="w-16 px-1 py-0 text-xs border rounded" 
-                                                                                                   placeholder="${weekData.demand}"
-                                                                                                   value="${customQty !== null ? customQty : ''}"
-                                                                                                   ${!isSelected ? 'disabled' : ''}
-                                                                                                   data-granular-qty
-                                                                                                   data-dfu="${this.selectedDFU}"
-                                                                                                   data-source="${variant}"
-                                                                                                   data-target="${targetVariant}"
-                                                                                                   data-week="${weekKey}"
-                                                                                            >
-                                                                                        </div>
-                                                                                    `;
-                                                                                }).join('')}
-                                                                            </div>
-                                                                        </div>
-                                                                    `;
-                                                                }).join('')}
+                                                                        `;
+                                                                    }).join('')}
+                                                                </div>
                                                             </div>
-                                                        </div>
+                                                        ` : ''}
                                                     </div>
                                                 `;
                                             }).join('')}
                                         </div>
                                     </div>
                                     
-                                    <!-- Action Buttons -->
-                                    ${((this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0) || 
-                                       this.bulkTransfers[this.selectedDFU] || 
-                                       (this.granularTransfers[this.selectedDFU] && Object.keys(this.granularTransfers[this.selectedDFU]).length > 0)) ? `
-                                        <div class="p-3 bg-blue-50 rounded-lg">
-                                            <div class="text-sm text-blue-800 mb-3">
-                                                ${this.bulkTransfers[this.selectedDFU] ? `
-                                                    <p><strong>Bulk Transfer:</strong> All variants → ${this.bulkTransfers[this.selectedDFU]}</p>
-                                                ` : ''}
-                                                ${this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0 ? `
-                                                    <p><strong>Individual Transfers:</strong></p>
-                                                    <ul class="list-disc list-inside ml-4">
-                                                        ${Object.keys(this.transfers[this.selectedDFU]).map(sourceVariant => {
-                                                            const targetVariant = this.transfers[this.selectedDFU][sourceVariant];
-                                                            return sourceVariant !== targetVariant ? 
-                                                                `<li>${sourceVariant} → ${targetVariant}</li>` : '';
-                                                        }).filter(Boolean).join('')}
-                                                    </ul>
-                                                ` : ''}
-                                                ${this.granularTransfers[this.selectedDFU] && Object.keys(this.granularTransfers[this.selectedDFU]).length > 0 ? `
-                                                    <p><strong>Granular Transfers:</strong></p>
-                                                    <ul class="list-disc list-inside ml-4 text-xs">
-                                                        ${Object.keys(this.granularTransfers[this.selectedDFU]).map(sourceVariant => {
-                                                            const sourceTransfers = this.granularTransfers[this.selectedDFU][sourceVariant];
-                                                            return Object.keys(sourceTransfers).map(targetVariant => {
-                                                                const weekTransfers = sourceTransfers[targetVariant];
-                                                                const weekCount = Object.keys(weekTransfers).length;
-                                                                return weekCount > 0 ? `<li>${sourceVariant} → ${targetVariant} (${weekCount} weeks)</li>` : '';
-                                                            }).filter(Boolean).join('');
-                                                        }).filter(Boolean).join('')}
-                                                    </ul>
-                                                ` : ''}
+                                    <!-- Action Buttons Container -->
+                                    <div class="action-buttons-container">
+                                        ${((this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0) || 
+                                           this.bulkTransfers[this.selectedDFU] || 
+                                           (this.granularTransfers[this.selectedDFU] && Object.keys(this.granularTransfers[this.selectedDFU]).length > 0)) ? `
+                                            <div class="p-3 bg-blue-50 rounded-lg">
+                                                <div class="text-sm text-blue-800 mb-3">
+                                                    ${this.bulkTransfers[this.selectedDFU] ? `
+                                                        <p><strong>Bulk Transfer:</strong> All variants → ${this.bulkTransfers[this.selectedDFU]}</p>
+                                                    ` : ''}
+                                                    ${this.transfers[this.selectedDFU] && Object.keys(this.transfers[this.selectedDFU]).length > 0 ? `
+                                                        <p><strong>Individual Transfers:</strong></p>
+                                                        <ul class="list-disc list-inside ml-4">
+                                                            ${Object.keys(this.transfers[this.selectedDFU]).map(sourceVariant => {
+                                                                const targetVariant = this.transfers[this.selectedDFU][sourceVariant];
+                                                                return sourceVariant !== targetVariant ? 
+                                                                    `<li>${sourceVariant} → ${targetVariant}</li>` : '';
+                                                            }).filter(Boolean).join('')}
+                                                        </ul>
+                                                    ` : ''}
+                                                    ${this.granularTransfers[this.selectedDFU] && Object.keys(this.granularTransfers[this.selectedDFU]).length > 0 ? `
+                                                        <p><strong>Granular Transfers:</strong></p>
+                                                        <ul class="list-disc list-inside ml-4 text-xs">
+                                                            ${Object.keys(this.granularTransfers[this.selectedDFU]).map(sourceVariant => {
+                                                                const sourceTransfers = this.granularTransfers[this.selectedDFU][sourceVariant];
+                                                                return Object.keys(sourceTransfers).map(targetVariant => {
+                                                                    const weekTransfers = sourceTransfers[targetVariant];
+                                                                    const weekCount = Object.keys(weekTransfers).length;
+                                                                    return weekCount > 0 ? `<li>${sourceVariant} → ${targetVariant} (${weekCount} weeks)</li>` : '';
+                                                                }).filter(Boolean).join('');
+                                                            }).filter(Boolean).join('')}
+                                                        </ul>
+                                                    ` : ''}
+                                                </div>
+                                                <div class="flex gap-2">
+                                                    <button class="btn btn-success" id="executeBtn">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                                        </svg>
+                                                        Execute Transfer
+                                                    </button>
+                                                    <button class="btn btn-secondary" id="cancelBtn">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                        Cancel
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <div class="flex gap-2">
-                                                <button class="btn btn-success" id="executeBtn">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                                                    </svg>
-                                                    Execute Transfer
-                                                </button>
-                                                <button class="btn btn-secondary" id="cancelBtn">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                                    </svg>
-                                                    Cancel
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ` : ''}
+                                        ` : ''}
+                                    </div>
                                 `}
                             </div>
                         ` : `
@@ -1295,33 +1371,123 @@ class DemandTransferApp {
             select.addEventListener('change', (e) => {
                 const sourceVariant = e.target.dataset.sourceVariant;
                 const targetVariant = e.target.value;
+                
                 if (targetVariant) {
                     this.setIndividualTransfer(this.selectedDFU, sourceVariant, targetVariant);
+                    
+                    // Show granular section for this variant by updating just that section
+                    const granularSection = document.getElementById(`granular-${sourceVariant}`);
+                    if (granularSection) {
+                        const demandData = this.multiVariantDFUs[this.selectedDFU].variantDemand[sourceVariant];
+                        granularSection.innerHTML = `
+                            <h6 class="font-medium text-gray-700 mb-2 text-sm">Or transfer specific weeks to ${targetVariant}:</h6>
+                            <div class="space-y-2 max-h-40 overflow-y-auto">
+                                ${Object.keys(demandData?.weeklyRecords || {}).map(weekKey => {
+                                    const weekData = demandData.weeklyRecords[weekKey];
+                                    const isSelected = this.granularTransfers[this.selectedDFU] && 
+                                        this.granularTransfers[this.selectedDFU][sourceVariant] && 
+                                        this.granularTransfers[this.selectedDFU][sourceVariant][targetVariant] && 
+                                        this.granularTransfers[this.selectedDFU][sourceVariant][targetVariant][weekKey] && 
+                                        this.granularTransfers[this.selectedDFU][sourceVariant][targetVariant][weekKey].selected;
+                                    
+                                    const customQty = isSelected ? 
+                                        this.granularTransfers[this.selectedDFU][sourceVariant][targetVariant][weekKey].customQuantity : null;
+                                    
+                                    return `
+                                        <div class="bg-white rounded border p-2 text-xs">
+                                            <div class="flex items-center justify-between mb-2">
+                                                <span class="font-medium">Week ${weekData.weekNumber} (Loc: ${weekData.sourceLocation})</span>
+                                                <span class="text-gray-600">${this.formatNumber(weekData.demand)} demand</span>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <input type="checkbox" 
+                                                       class="w-3 h-3" 
+                                                       ${isSelected ? 'checked' : ''}
+                                                       data-granular-toggle
+                                                       data-dfu="${this.selectedDFU}"
+                                                       data-source="${sourceVariant}"
+                                                       data-target="${targetVariant}"
+                                                       data-week="${weekKey}"
+                                                >
+                                                <span class="text-xs">Transfer to ${targetVariant}</span>
+                                                <input type="number" 
+                                                       class="w-16 px-1 py-0 text-xs border rounded" 
+                                                       placeholder="${weekData.demand}"
+                                                       value="${customQty !== null ? customQty : ''}"
+                                                       ${!isSelected ? 'disabled' : ''}
+                                                       data-granular-qty
+                                                       data-dfu="${this.selectedDFU}"
+                                                       data-source="${sourceVariant}"
+                                                       data-target="${targetVariant}"
+                                                       data-week="${weekKey}"
+                                                >
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        `;
+                        
+                        // Re-attach event listeners for the new granular controls
+                        this.attachGranularEventListeners();
+                    }
+                    
+                    // Update action buttons
+                    this.updateActionButtonsOnly();
+                    
                 } else {
                     // Remove transfer if empty selection
                     if (this.transfers[this.selectedDFU]) {
                         delete this.transfers[this.selectedDFU][sourceVariant];
                     }
-                    this.render();
+                    
+                    // Hide granular section
+                    const granularSection = document.getElementById(`granular-${sourceVariant}`);
+                    if (granularSection) {
+                        granularSection.innerHTML = '';
+                    }
+                    
+                    this.updateActionButtonsOnly();
                 }
             });
         });
         
+        // Attach granular event listeners
+        this.attachGranularEventListeners();
+    }
+    
+    attachGranularEventListeners() {
         // Granular transfer checkbox handlers
         document.querySelectorAll('[data-granular-toggle]').forEach(checkbox => {
-            checkbox.addEventListener('change', (e) => {
+            // Remove existing listeners to avoid duplicates
+            checkbox.removeEventListener('change', this.granularToggleHandler);
+            
+            // Add new listener
+            this.granularToggleHandler = (e) => {
                 const dfuCode = e.target.dataset.dfu;
                 const sourceVariant = e.target.dataset.source;
                 const targetVariant = e.target.dataset.target;
                 const weekKey = e.target.dataset.week;
                 
                 this.toggleGranularWeek(dfuCode, sourceVariant, targetVariant, weekKey);
-            });
+                
+                // Update the quantity input state
+                const qtyInput = document.querySelector(`[data-granular-qty][data-week="${weekKey}"][data-source="${sourceVariant}"][data-target="${targetVariant}"]`);
+                if (qtyInput) {
+                    qtyInput.disabled = !e.target.checked;
+                }
+            };
+            
+            checkbox.addEventListener('change', this.granularToggleHandler);
         });
         
         // Granular transfer quantity handlers
         document.querySelectorAll('[data-granular-qty]').forEach(input => {
-            input.addEventListener('input', (e) => {
+            // Remove existing listeners
+            input.removeEventListener('input', this.granularQtyHandler);
+            
+            // Add new listener
+            this.granularQtyHandler = (e) => {
                 const dfuCode = e.target.dataset.dfu;
                 const sourceVariant = e.target.dataset.source;
                 const targetVariant = e.target.dataset.target;
@@ -1329,7 +1495,9 @@ class DemandTransferApp {
                 const quantity = e.target.value;
                 
                 this.updateGranularQuantity(dfuCode, sourceVariant, targetVariant, weekKey, quantity);
-            });
+            };
+            
+            input.addEventListener('input', this.granularQtyHandler);
         });
     }
 }
