@@ -1318,14 +1318,24 @@ class DemandTransferApp {
         
         this.attachEventListeners();
         
-        // Debug: Check if granular containers were created
-        if (this.selectedDFU && this.multiVariantDFUs[this.selectedDFU]) {
-            console.log('Post-render check for granular containers:');
-            this.multiVariantDFUs[this.selectedDFU].variants.forEach(variant => {
-                const container = document.getElementById(`granular-${variant}`);
-                console.log(`Container granular-${variant}:`, container ? 'EXISTS' : 'MISSING');
-            });
-        }
+        // Debug: Check if granular containers were created after DOM update
+        setTimeout(() => {
+            if (this.selectedDFU && this.multiVariantDFUs[this.selectedDFU]) {
+                console.log('=== POST-RENDER GRANULAR CONTAINER CHECK ===');
+                this.multiVariantDFUs[this.selectedDFU].variants.forEach(variant => {
+                    const container = document.getElementById(`granular-${variant}`);
+                    console.log(`Container granular-${variant}:`, container ? 'EXISTS' : 'MISSING');
+                    if (container) {
+                        console.log(`  - Class: ${container.className}`);
+                        console.log(`  - Parent: ${container.parentElement?.tagName}`);
+                    }
+                });
+                
+                // Also check all elements with granular in their ID
+                const allGranular = document.querySelectorAll('[id*="granular"]');
+                console.log('All elements with "granular" in ID:', Array.from(allGranular).map(el => el.id));
+            }
+        }, 100);
     }
     
     attachEventListeners() {
