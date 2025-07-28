@@ -26,7 +26,7 @@ class DemandTransferApp {
     
     init() {
         console.log('🚀 DFU Demand Transfer App v2.4.3 - Build: 2025-07-20-21:30');
-        console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh, Part Description');
+        console.log('📋 Features: Individual transfers, bulk transfers, UI force refresh');
         this.render();
         this.attachEventListeners();
     }
@@ -143,6 +143,14 @@ class DemandTransferApp {
             partDescriptionColumn, 
             plantLocationColumn 
         });
+        
+        // Check if PartDescription column exists
+        console.log('PartDescription column exists:', columns.includes('PartDescription'));
+        console.log('Sample PartDescription value:', sampleRecord['PartDescription']);
+        
+        // Show all columns that might contain description
+        const descriptionColumns = columns.filter(col => col.toLowerCase().includes('description'));
+        console.log('Columns containing "description":', descriptionColumns);
         
         // Extract unique plant locations for filtering
         this.availablePlantLocations = [...new Set(data.map(record => record[plantLocationColumn]))].filter(Boolean).sort();
