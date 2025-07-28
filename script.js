@@ -655,6 +655,9 @@ class DemandTransferApp {
             
             let granularTransferCount = 0;
             
+            // Get column info for granular transfers
+            const { weekNumberColumn } = dfuData;
+            
             // Process each source variant's granular transfers
             Object.keys(granularTransfers).forEach(sourceVariant => {
                 const sourceTargets = granularTransfers[sourceVariant];
