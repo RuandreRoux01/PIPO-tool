@@ -923,6 +923,28 @@ class DemandTransferApp {
         this.render();
     }
     
+    undoTransfer(dfuCode) {
+        console.log(`Undoing transfer for DFU ${dfuCode}`);
+        
+        // Remove from completed transfers
+        delete this.completedTransfers[dfuCode];
+        
+        // Clear any current transfer settings
+        delete this.transfers[dfuCode];
+        delete this.bulkTransfers[dfuCode];
+        delete this.granularTransfers[dfuCode];
+        
+        // Force recalculation of multi-variant DFUs
+        this.multiVariantDFUs = {};
+        this.filteredDFUs = {};
+        
+        // Re-process the data to show the variants again
+        this.processMultiVariantDFUs(this.rawData);
+        
+        this.showNotification(`Transfer undone for DFU ${dfuCode}. You can now make new transfers.`, 'success');
+        this.render();
+    }
+    
     exportData() {
         try {
             const wb = XLSX.utils.book_new();
@@ -1430,6 +1452,11 @@ class DemandTransferApp {
         const cancelBtn = document.getElementById('cancelBtn');
         if (cancelBtn) {
             cancelBtn.addEventListener('click', () => this.cancelTransfer(this.selectedDFU));
+        }
+        
+        const undoTransferBtn = document.getElementById('undoTransferBtn');
+        if (undoTransferBtn) {
+            undoTransferBtn.addEventListener('click', () => this.undoTransfer(this.selectedDFU));
         }
         
         // DFU card click handlers
