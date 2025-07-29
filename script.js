@@ -33,7 +33,7 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.9.2 - Build: 2025-07-29-ui-improved');
+        console.log('🚀 DFU Demand Transfer App v2.9.1 - Build: 2025-07-29-ui-improved');
         console.log('📋 Fixed UI: Removed redundant header, added execution summary');
         this.render();
         this.attachEventListeners();
@@ -115,15 +115,25 @@ class DemandTransferApp {
             const columns = Object.keys(sampleRecord);
             console.log('Cycle data columns:', columns);
             
-            // Find actual column names (case-insensitive)
+            // Find actual column names (case-insensitive and flexible matching)
             const actualDfuColumn = columns.find(col => col.toUpperCase() === 'DFU') || dfuColumn;
-            const actualPartCodeColumn = columns.find(col => col.toUpperCase().includes('PART') && col.toUpperCase().includes('CODE')) || partCodeColumn;
+            const actualPartCodeColumn = columns.find(col => 
+                col.toUpperCase().includes('PART') || 
+                col.toUpperCase().includes('CODE') ||
+                col.toUpperCase() === 'PART CODE'
+            ) || partCodeColumn;
             const actualSosColumn = columns.find(col => col.toUpperCase() === 'SOS') || sosColumn;
             const actualEosColumn = columns.find(col => col.toUpperCase() === 'EOS') || eosColumn;
             
-            console.log('Using columns:', { actualDfuColumn, actualPartCodeColumn, actualSosColumn, actualEosColumn });
+            console.log('Using columns:', { 
+                dfu: actualDfuColumn, 
+                partCode: actualPartCodeColumn, 
+                sos: actualSosColumn, 
+                eos: actualEosColumn 
+            });
             
             // Process each record
+            let processedCount = 0;
             data.forEach(record => {
                 const dfuCode = record[actualDfuColumn];
                 const partCode = record[actualPartCodeColumn];
@@ -131,24 +141,35 @@ class DemandTransferApp {
                 const eos = record[actualEosColumn];
                 
                 if (dfuCode && partCode) {
-                    if (!this.variantCycleDates[dfuCode]) {
-                        this.variantCycleDates[dfuCode] = {};
+                    // Ensure both are strings for consistent comparison
+                    const dfuStr = dfuCode.toString().trim();
+                    const partStr = partCode.toString().trim();
+                    
+                    if (!this.variantCycleDates[dfuStr]) {
+                        this.variantCycleDates[dfuStr] = {};
                     }
                     
-                    this.variantCycleDates[dfuCode][partCode] = {
+                    this.variantCycleDates[dfuStr][partStr] = {
                         sos: sos || 'N/A',
                         eos: eos || 'N/A'
                     };
+                    processedCount++;
                 }
             });
             
-            console.log('Processed cycle data for DFUs:', Object.keys(this.variantCycleDates).length);
+            console.log(`Processed ${processedCount} cycle data records`);
+            console.log('Cycle data for DFUs:', Object.keys(this.variantCycleDates).length);
+            console.log('Sample cycle data:', this.variantCycleDates);
         }
     }
     
     getCycleDataForVariant(dfuCode, partCode) {
-        if (this.variantCycleDates[dfuCode] && this.variantCycleDates[dfuCode][partCode]) {
-            return this.variantCycleDates[dfuCode][partCode];
+        // Ensure both are strings for consistent comparison
+        const dfuStr = dfuCode ? dfuCode.toString().trim() : '';
+        const partStr = partCode ? partCode.toString().trim() : '';
+        
+        if (this.variantCycleDates[dfuStr] && this.variantCycleDates[dfuStr][partStr]) {
+            return this.variantCycleDates[dfuStr][partStr];
         }
         return null;
     }
@@ -1696,6 +1717,18 @@ class DemandTransferApp {
         const undoTransferBtn = document.getElementById('undoTransferBtn');
         if (undoTransferBtn) {
             undoTransferBtn.addEventListener('click', () => this.undoTransfer(this.selectedDFU));
+        }
+        
+        // Add cycle file input listener
+        const cycleFileInput = document.getElementById('cycleFileInput');
+        if (cycleFileInput) {
+            cycleFileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    console.log('Cycle file selected:', file.name);
+                    this.loadVariantCycleData(file);
+                }
+            });
         }
         
         // DFU card click handlers
