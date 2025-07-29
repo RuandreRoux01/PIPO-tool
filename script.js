@@ -18,6 +18,8 @@ class DemandTransferApp {
         this.isProcessed = false;
         this.isLoading = false;
         this.lastExecutionSummary = {}; // Store last execution summary for display
+        this.variantCycleDates = {}; // Store SOS/EOS data: { dfuCode: { partCode: { sos: date, eos: date } } }
+        this.hasVariantCycleData = false; // Flag to check if cycle data is loaded
         
         this.init();
     }
@@ -42,6 +44,105 @@ class DemandTransferApp {
     
     formatNumber(num) {
         return new Intl.NumberFormat().format(num);
+    }
+    
+    async loadVariantCycleData(file) {
+        console.log('Starting to load variant cycle data...');
+        
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            console.log('Variant cycle array buffer size:', arrayBuffer.byteLength);
+            
+            const workbook = XLSX.read(arrayBuffer, { 
+                cellStyles: true, 
+                cellFormulas: true, 
+                cellDates: true,
+                cellNF: true,
+                sheetStubs: true
+            });
+            
+            console.log('Available sheets in cycle file:', workbook.SheetNames);
+            
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const data = XLSX.utils.sheet_to_json(worksheet);
+            
+            console.log('Loaded variant cycle data:', data.length, 'records');
+            
+            if (data.length > 0) {
+                console.log('Sample cycle record:', data[0]);
+                console.log('Available columns:', Object.keys(data[0]));
+                
+                // Process the cycle data
+                this.processCycleData(data);
+                this.hasVariantCycleData = true;
+                this.showNotification(`Successfully loaded ${data.length} variant cycle records`);
+                
+                // Re-render to show the new data
+                this.render();
+            } else {
+                this.showNotification('No data found in the variant cycle file', 'error');
+            }
+            
+        } catch (error) {
+            console.error('Error loading variant cycle data:', error);
+            this.showNotification('Error loading variant cycle data: ' + error.message, 'error');
+        }
+    }
+    
+    processCycleData(data) {
+        console.log('Processing cycle data...');
+        
+        // Clear existing cycle data
+        this.variantCycleDates = {};
+        
+        // Expected column names (adjust if your file has different column names)
+        const dfuColumn = 'DFU';
+        const partCodeColumn = 'Part Code';
+        const sosColumn = 'SOS';
+        const eosColumn = 'EOS';
+        
+        // Check if columns exist
+        if (data.length > 0) {
+            const sampleRecord = data[0];
+            const columns = Object.keys(sampleRecord);
+            console.log('Cycle data columns:', columns);
+            
+            // Find actual column names (case-insensitive)
+            const actualDfuColumn = columns.find(col => col.toUpperCase() === 'DFU') || dfuColumn;
+            const actualPartCodeColumn = columns.find(col => col.toUpperCase().includes('PART') && col.toUpperCase().includes('CODE')) || partCodeColumn;
+            const actualSosColumn = columns.find(col => col.toUpperCase() === 'SOS') || sosColumn;
+            const actualEosColumn = columns.find(col => col.toUpperCase() === 'EOS') || eosColumn;
+            
+            console.log('Using columns:', { actualDfuColumn, actualPartCodeColumn, actualSosColumn, actualEosColumn });
+            
+            // Process each record
+            data.forEach(record => {
+                const dfuCode = record[actualDfuColumn];
+                const partCode = record[actualPartCodeColumn];
+                const sos = record[actualSosColumn];
+                const eos = record[actualEosColumn];
+                
+                if (dfuCode && partCode) {
+                    if (!this.variantCycleDates[dfuCode]) {
+                        this.variantCycleDates[dfuCode] = {};
+                    }
+                    
+                    this.variantCycleDates[dfuCode][partCode] = {
+                        sos: sos || 'N/A',
+                        eos: eos || 'N/A'
+                    };
+                }
+            });
+            
+            console.log('Processed cycle data for DFUs:', Object.keys(this.variantCycleDates).length);
+        }
+    }
+    
+    getCycleDataForVariant(dfuCode, partCode) {
+        if (this.variantCycleDates[dfuCode] && this.variantCycleDates[dfuCode][partCode]) {
+            return this.variantCycleDates[dfuCode][partCode];
+        }
+        return null;
     }
     
     handleFileUpload(event) {
