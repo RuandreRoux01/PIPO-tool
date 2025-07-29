@@ -1126,8 +1126,11 @@ class DemandTransferApp {
                             </svg>
                             DFUs Requiring Review (${Object.keys(this.filteredDFUs).length})
                         </h3>
-                        <div class="space-y-3 max-h-96 overflow-y-auto">
-                            ${Object.keys(this.filteredDFUs).map(dfuCode => {
+                        <div class="relative">
+                            <div class="absolute inset-x-0 top-0 h-4 bg-gradient-to-b from-gray-50 to-transparent pointer-events-none z-10"></div>
+                            <div class="absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-gray-50 to-transparent pointer-events-none z-10"></div>
+                            <div class="space-y-2 max-h-[420px] overflow-y-auto pr-1 scrollbar-custom">
+                                ${Object.keys(this.filteredDFUs).map(dfuCode => {
                                 const dfuData = this.filteredDFUs[dfuCode];
                                 if (!dfuData || !dfuData.variants) return '';
                                 
@@ -1162,7 +1165,8 @@ class DemandTransferApp {
                                         </div>
                                     </div>
                                 `;
-                            }).join('')}
+                                }).join('')}
+                            </div>
                         </div>
                     </div>
 
