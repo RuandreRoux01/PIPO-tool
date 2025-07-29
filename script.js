@@ -1118,15 +1118,15 @@ class DemandTransferApp {
                     </button>
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 grid-responsive">
-                    <div class="bg-gray-50 rounded-lg p-6">
-                        <h3 class="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 grid-responsive min-h-[600px]">
+                    <div class="bg-gray-50 rounded-lg p-6 flex flex-col h-full">
+                        <h3 class="font-semibold text-gray-800 mb-4 flex items-center gap-2 flex-shrink-0">
                             <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
                             </svg>
                             DFUs Requiring Review (${Object.keys(this.filteredDFUs).length})
                         </h3>
-                        <div class="space-y-3 max-h-96 overflow-y-auto">
+                        <div class="space-y-3 overflow-y-auto flex-grow">
                             ${Object.keys(this.filteredDFUs).map(dfuCode => {
                                 const dfuData = this.filteredDFUs[dfuCode];
                                 if (!dfuData || !dfuData.variants) return '';
@@ -1166,10 +1166,10 @@ class DemandTransferApp {
                         </div>
                     </div>
 
-                    <div class="bg-white border border-gray-200 rounded-lg p-6">
+                    <div class="bg-white border border-gray-200 rounded-lg p-6 flex flex-col h-full overflow-hidden">
                         ${this.selectedDFU && this.multiVariantDFUs[this.selectedDFU] ? `
-                            <div>
-                                <h3 class="font-semibold text-gray-800 mb-4">
+                            <div class="flex flex-col h-full overflow-y-auto">
+                                <h3 class="font-semibold text-gray-800 mb-4 flex-shrink-0">
                                     DFU: ${this.selectedDFU}${this.multiVariantDFUs[this.selectedDFU].plantLocation ? ` (Plant: ${this.multiVariantDFUs[this.selectedDFU].plantLocation})` : ''} - Variant Details
                                     ${this.multiVariantDFUs[this.selectedDFU].isCompleted ? `
                                         <span class="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
