@@ -1126,9 +1126,8 @@ class DemandTransferApp {
                             </svg>
                             DFUs Requiring Review (${Object.keys(this.filteredDFUs).length})
                         </h3>
-                        <div class="bg-white border border-gray-200 rounded-lg p-4 max-h-[480px] overflow-hidden">
-                            <div class="space-y-2 max-h-full overflow-y-auto pr-2">
-                                ${Object.keys(this.filteredDFUs).map(dfuCode => {
+                        <div class="space-y-3 max-h-96 overflow-y-auto">
+                            ${Object.keys(this.filteredDFUs).map(dfuCode => {
                                 const dfuData = this.filteredDFUs[dfuCode];
                                 if (!dfuData || !dfuData.variants) return '';
                                 
