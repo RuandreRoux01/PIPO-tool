@@ -1,4 +1,12 @@
-// DFU Demand Transfer Management Application
+const cycleFileInput = document.getElementById('cycleFileInput');
+        if (cycleFileInput) {
+            cycleFileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    this.loadVariantCycleData(file);
+                }
+            });
+        }// DFU Demand Transfer Management Application
 // Version: 2.9.1 - Build: 2025-07-29-ui-improved
 // Fixed UI: Removed redundant header, added execution summary
 
@@ -25,7 +33,7 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.9.1 - Build: 2025-07-29-ui-improved');
+        console.log('🚀 DFU Demand Transfer App v2.9.2 - Build: 2025-07-29-ui-improved');
         console.log('📋 Fixed UI: Removed redundant header, added execution summary');
         this.render();
         this.attachEventListeners();
@@ -1156,6 +1164,14 @@ class DemandTransferApp {
                                             <li><strong>Source Location</strong> - Source location codes</li>
                                         </ul>
                                     </div>
+                                    
+                                    <div class="border-t pt-4 mt-4">
+                                        <h3 class="text-sm font-medium text-gray-700 mb-2">Optional: Upload Variant Cycle Dates</h3>
+                                        <input type="file" accept=".xlsx,.xls" class="file-input" id="cycleFileInput">
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            Upload file with DFU, Part Code, SOS, and EOS columns
+                                        </p>
+                                    </div>
                                 </div>
                             `}
                         </div>
@@ -1166,6 +1182,16 @@ class DemandTransferApp {
             if (!this.isLoading) {
                 const fileInput = document.getElementById('fileInput');
                 fileInput.addEventListener('change', (e) => this.handleFileUpload(e));
+                
+                const cycleFileInput = document.getElementById('cycleFileInput');
+                if (cycleFileInput) {
+                    cycleFileInput.addEventListener('change', (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            this.loadVariantCycleData(file);
+                        }
+                    });
+                }
             }
             
             return;
@@ -1211,6 +1237,22 @@ class DemandTransferApp {
                             `).join('')}
                         </select>
                     </div>
+                    ${this.hasVariantCycleData ? `
+                        <span class="inline-flex items-center px-3 py-2 text-sm text-green-700 bg-green-100 rounded-lg">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Cycle Data Loaded
+                        </span>
+                    ` : `
+                        <label class="btn btn-secondary cursor-pointer">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                            Load Cycle Dates
+                            <input type="file" accept=".xlsx,.xls" class="hidden" id="cycleFileInput">
+                        </label>
+                    `}
                     <button class="btn btn-success" id="exportBtn">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1381,6 +1423,18 @@ class DemandTransferApp {
                                                                 <h5 class="font-medium text-gray-800">Part: ${variant}</h5>
                                                                 <p class="text-xs text-gray-500 mb-1 max-w-md break-words">${demandData?.partDescription || 'Description not available'}</p>
                                                                 <p class="text-sm text-gray-600">${demandData?.recordCount || 0} records • ${this.formatNumber(demandData?.totalDemand || 0)} total demand</p>
+                                                                ${(() => {
+                                                                    const cycleData = this.getCycleDataForVariant(this.selectedDFU, variant);
+                                                                    if (cycleData) {
+                                                                        return `
+                                                                            <div class="mt-1 text-xs space-y-0.5">
+                                                                                <p class="text-blue-600"><strong>SOS:</strong> ${cycleData.sos}</p>
+                                                                                <p class="text-red-600"><strong>EOS:</strong> ${cycleData.eos}</p>
+                                                                            </div>
+                                                                        `;
+                                                                    }
+                                                                    return '';
+                                                                })()}
                                                             </div>
                                                         </div>
                                                         
