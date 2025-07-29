@@ -1,6 +1,6 @@
 // DFU Demand Transfer Management Application
-// Version: 2.9.0 - Build: 2025-07-28-undo-fixed
-// Fixed undo button for completed transfers
+// Version: 2.9.1 - Build: 2025-07-29-ui-improved
+// Fixed UI: Removed redundant header, added execution summary
 
 class DemandTransferApp {
     constructor() {
@@ -17,13 +17,14 @@ class DemandTransferApp {
         this.completedTransfers = {}; // Format: { dfuCode: { type: 'bulk'|'individual', targetVariant, timestamp } }
         this.isProcessed = false;
         this.isLoading = false;
+        this.lastExecutionSummary = {}; // Store last execution summary for display
         
         this.init();
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.9.0 - Build: 2025-07-28-undo-fixed');
-        console.log('📋 Fixed undo button for completed transfers');
+        console.log('🚀 DFU Demand Transfer App v2.9.1 - Build: 2025-07-29-ui-improved');
+        console.log('📋 Fixed UI: Removed redundant header, added execution summary');
         this.render();
         this.attachEventListeners();
     }
@@ -408,6 +409,9 @@ class DemandTransferApp {
                                  this.bulkTransfers[this.selectedDFU] || 
                                  (this.granularTransfers[this.selectedDFU] && Object.keys(this.granularTransfers[this.selectedDFU]).length > 0));
             
+            // Check if we have a recent execution summary to show
+            const hasExecutionSummary = this.lastExecutionSummary[this.selectedDFU];
+            
             if (hasTransfers) {
                 actionButtonsContainer.innerHTML = `
                     <div class="p-3 bg-blue-50 rounded-lg">
@@ -466,6 +470,24 @@ class DemandTransferApp {
                 if (cancelBtn) {
                     cancelBtn.addEventListener('click', () => this.cancelTransfer(this.selectedDFU));
                 }
+            } else if (hasExecutionSummary) {
+                // Show last execution summary
+                const summary = this.lastExecutionSummary[this.selectedDFU];
+                actionButtonsContainer.innerHTML = `
+                    <div class="p-3 bg-gray-50 rounded-lg">
+                        <div class="text-sm text-gray-700">
+                            <h5 class="font-semibold mb-2 text-gray-800">Last Execution Summary:</h5>
+                            <p><strong>Type:</strong> ${summary.type}</p>
+                            <p><strong>Time:</strong> ${summary.timestamp}</p>
+                            <p><strong>Result:</strong> ${summary.message}</p>
+                            ${summary.details ? `
+                                <div class="mt-2 text-xs">
+                                    ${summary.details}
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
             } else {
                 actionButtonsContainer.innerHTML = '';
             }
@@ -486,6 +508,10 @@ class DemandTransferApp {
             minute: '2-digit', 
             second: '2-digit' 
         });
+        
+        let executionType = '';
+        let executionMessage = '';
+        let executionDetails = '';
         
         // Handle bulk transfer
         if (this.bulkTransfers[dfuCode]) {
@@ -557,7 +583,11 @@ class DemandTransferApp {
                 transferHistory
             };
             
-            this.showNotification(`Bulk transfer completed for DFU ${dfuCode}: ${dfuData.variants.length - 1} variants transferred to ${targetVariant}`);
+            executionType = 'Bulk Transfer';
+            executionMessage = `${dfuData.variants.length - 1} variants transferred to ${targetVariant}`;
+            executionDetails = `<p>All variants consolidated into: <strong>${targetVariant}</strong></p>`;
+            
+            this.showNotification(`Bulk transfer completed for DFU ${dfuCode}: ${executionMessage}`);
         }
         
         // Handle individual transfers
@@ -642,7 +672,15 @@ class DemandTransferApp {
                 transferHistory
             };
             
-            this.showNotification(`Individual transfers completed for DFU ${dfuCode}: ${transferCount} variant transfers executed`);
+            executionType = 'Individual Transfers';
+            executionMessage = `${transferCount} variant transfers executed`;
+            executionDetails = `<ul class="list-disc list-inside ml-4">
+                ${Object.keys(individualTransfers).map(src => 
+                    src !== individualTransfers[src] ? `<li>${src} → ${individualTransfers[src]}</li>` : ''
+                ).filter(Boolean).join('')}
+            </ul>`;
+            
+            this.showNotification(`Individual transfers completed for DFU ${dfuCode}: ${executionMessage}`);
         }
         
         // Handle granular transfers
@@ -769,8 +807,20 @@ class DemandTransferApp {
                 transferHistory
             };
             
-            this.showNotification(`Granular transfers completed for DFU ${dfuCode}: ${granularTransferCount} week-level transfers executed`);
+            executionType = 'Granular Transfers';
+            executionMessage = `${granularTransferCount} week-level transfers executed`;
+            executionDetails = `<p>Specific weeks transferred between variants</p>`;
+            
+            this.showNotification(`Granular transfers completed for DFU ${dfuCode}: ${executionMessage}`);
         }
+
+        // Store execution summary
+        this.lastExecutionSummary[dfuCode] = {
+            type: executionType,
+            timestamp: timestamp,
+            message: executionMessage,
+            details: executionDetails
+        };
 
         // CRITICAL: Consolidate records FIRST before recalculating UI data
         console.log('Step 1: Consolidating records...');
@@ -934,6 +984,9 @@ class DemandTransferApp {
         delete this.bulkTransfers[dfuCode];
         delete this.granularTransfers[dfuCode];
         
+        // Clear execution summary
+        delete this.lastExecutionSummary[dfuCode];
+        
         // Force recalculation of multi-variant DFUs
         this.multiVariantDFUs = {};
         this.filteredDFUs = {};
@@ -1028,8 +1081,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.9.0</p>
-                            <p>Build: 2025-07-28-undo-fixed</p>
+                            <p>Version 2.9.1</p>
+                            <p>Build: 2025-07-29-ui-improved</p>
                         </div>
                     </div>
                 </div>
@@ -1244,7 +1297,6 @@ class DemandTransferApp {
                                                         <!-- Granular Week-Level Transfers - Only show if target selected -->
                                                         ${currentTransfer && currentTransfer !== variant ? `
                                                             <div class="border-t pt-3 mt-3" id="granular-${variant}">
-                                                                <h6 class="font-medium text-gray-700 mb-2 text-sm">Or transfer specific weeks to ${currentTransfer}:</h6>
                                                                 <div class="space-y-2 max-h-40 overflow-y-auto">
                                                                     ${Object.keys(demandData?.weeklyRecords || {}).map(weekKey => {
                                                                         const weekData = demandData.weeklyRecords[weekKey];
@@ -1259,13 +1311,9 @@ class DemandTransferApp {
                                                                         
                                                                         return `
                                                                             <div class="bg-white rounded border p-2 text-xs">
-                                                                                <div class="flex items-center justify-between mb-2">
-                                                                                    <span class="font-medium">Week ${weekData.weekNumber} (Loc: ${weekData.sourceLocation})</span>
-                                                                                    <span class="text-gray-600">${this.formatNumber(weekData.demand)} demand</span>
-                                                                                </div>
-                                                                                <div class="flex items-center gap-2">
+                                                                                <div class="flex items-center gap-3">
                                                                                     <input type="checkbox" 
-                                                                                           class="w-3 h-3" 
+                                                                                           class="w-4 h-4" 
                                                                                            ${isSelected ? 'checked' : ''}
                                                                                            data-granular-toggle
                                                                                            data-dfu="${this.selectedDFU}"
@@ -1273,9 +1321,12 @@ class DemandTransferApp {
                                                                                            data-target="${currentTransfer}"
                                                                                            data-week="${weekKey}"
                                                                                     >
-                                                                                    <span class="text-xs">Transfer to ${currentTransfer}</span>
+                                                                                    <div class="flex-1">
+                                                                                        <span class="font-medium">Week ${weekData.weekNumber} (Loc: ${weekData.sourceLocation})</span>
+                                                                                        <span class="text-gray-600 ml-2">${this.formatNumber(weekData.demand)} demand</span>
+                                                                                    </div>
                                                                                     <input type="number" 
-                                                                                           class="w-16 px-1 py-0 text-xs border rounded" 
+                                                                                           class="w-20 px-2 py-1 text-xs border rounded" 
                                                                                            placeholder="${weekData.demand}"
                                                                                            value="${customQty !== null ? customQty : ''}"
                                                                                            ${!isSelected ? 'disabled' : ''}
@@ -1345,6 +1396,20 @@ class DemandTransferApp {
                                                         </svg>
                                                         Cancel
                                                     </button>
+                                                </div>
+                                            </div>
+                                        ` : this.lastExecutionSummary[this.selectedDFU] ? `
+                                            <div class="p-3 bg-gray-50 rounded-lg">
+                                                <div class="text-sm text-gray-700">
+                                                    <h5 class="font-semibold mb-2 text-gray-800">Last Execution Summary:</h5>
+                                                    <p><strong>Type:</strong> ${this.lastExecutionSummary[this.selectedDFU].type}</p>
+                                                    <p><strong>Time:</strong> ${this.lastExecutionSummary[this.selectedDFU].timestamp}</p>
+                                                    <p><strong>Result:</strong> ${this.lastExecutionSummary[this.selectedDFU].message}</p>
+                                                    ${this.lastExecutionSummary[this.selectedDFU].details ? `
+                                                        <div class="mt-2 text-xs">
+                                                            ${this.lastExecutionSummary[this.selectedDFU].details}
+                                                        </div>
+                                                    ` : ''}
                                                 </div>
                                             </div>
                                         ` : ''}
@@ -1514,7 +1579,6 @@ class DemandTransferApp {
                         if (demandData && demandData.weeklyRecords) {
                             console.log(`Weekly records:`, Object.keys(demandData.weeklyRecords));
                             granularSection.innerHTML = `
-                                <h6 class="font-medium text-gray-700 mb-2 text-sm">Or transfer specific weeks to ${targetVariant}:</h6>
                                 <div class="space-y-2 max-h-40 overflow-y-auto">
                                     ${Object.keys(demandData.weeklyRecords).map(weekKey => {
                                         const weekData = demandData.weeklyRecords[weekKey];
@@ -1529,13 +1593,9 @@ class DemandTransferApp {
                                         
                                         return `
                                             <div class="bg-white rounded border p-2 text-xs">
-                                                <div class="flex items-center justify-between mb-2">
-                                                    <span class="font-medium">Week ${weekData.weekNumber} (Loc: ${weekData.sourceLocation})</span>
-                                                    <span class="text-gray-600">${this.formatNumber(weekData.demand)} demand</span>
-                                                </div>
-                                                <div class="flex items-center gap-2">
+                                                <div class="flex items-center gap-3">
                                                     <input type="checkbox" 
-                                                           class="w-3 h-3" 
+                                                           class="w-4 h-4" 
                                                            ${isSelected ? 'checked' : ''}
                                                            data-granular-toggle
                                                            data-dfu="${this.selectedDFU}"
@@ -1543,9 +1603,12 @@ class DemandTransferApp {
                                                            data-target="${targetVariant}"
                                                            data-week="${weekKey}"
                                                     >
-                                                    <span class="text-xs">Transfer to ${targetVariant}</span>
+                                                    <div class="flex-1">
+                                                        <span class="font-medium">Week ${weekData.weekNumber} (Loc: ${weekData.sourceLocation})</span>
+                                                        <span class="text-gray-600 ml-2">${this.formatNumber(weekData.demand)} demand</span>
+                                                    </div>
                                                     <input type="number" 
-                                                           class="w-16 px-1 py-0 text-xs border rounded" 
+                                                           class="w-20 px-2 py-1 text-xs border rounded" 
                                                            placeholder="${weekData.demand}"
                                                            value="${customQty !== null ? customQty : ''}"
                                                            ${!isSelected ? 'disabled' : ''}
