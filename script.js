@@ -33,7 +33,7 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.9.3 - Build: 2025-07-29-ui-improved');
+        console.log('🚀 DFU Demand Transfer App v2.9.5 - Build: 2025-07-29-ui-improved');
         console.log('📋 Fixed UI: Removed redundant header, added execution summary');
         this.render();
         this.attachEventListeners();
