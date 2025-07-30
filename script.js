@@ -33,8 +33,8 @@ class DemandTransferApp {
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.9.1 - Build: 2025-07-29-ui-improved');
-        console.log('📋 Fixed UI: Removed redundant header, added execution summary');
+        console.log('🚀 DFU Demand Transfer App v2.10.0 - Build: 2025-07-29-ui-improved');
+        console.log('📋 Fixed UI: Removed redundant header, added execution summary, added comments');
         this.render();
         this.attachEventListeners();
     }
@@ -108,6 +108,7 @@ class DemandTransferApp {
         const partCodeColumn = 'Part Code';
         const sosColumn = 'SOS';
         const eosColumn = 'EOS';
+        const commentsColumn = 'Comments';
         
         // Check if columns exist
         if (data.length > 0) {
@@ -124,12 +125,14 @@ class DemandTransferApp {
             ) || partCodeColumn;
             const actualSosColumn = columns.find(col => col.toUpperCase() === 'SOS') || sosColumn;
             const actualEosColumn = columns.find(col => col.toUpperCase() === 'EOS') || eosColumn;
+            const actualCommentsColumn = columns.find(col => col.toUpperCase() === 'COMMENTS' || col.toUpperCase() === 'COMMENT') || commentsColumn;
             
             console.log('Using columns:', { 
                 dfu: actualDfuColumn, 
                 partCode: actualPartCodeColumn, 
                 sos: actualSosColumn, 
-                eos: actualEosColumn 
+                eos: actualEosColumn,
+                comments: actualCommentsColumn
             });
             
             // Process each record
@@ -139,6 +142,7 @@ class DemandTransferApp {
                 const partCode = record[actualPartCodeColumn];
                 const sos = record[actualSosColumn];
                 const eos = record[actualEosColumn];
+                const comments = record[actualCommentsColumn];
                 
                 if (dfuCode && partCode) {
                     // Ensure both are strings for consistent comparison
@@ -151,7 +155,8 @@ class DemandTransferApp {
                     
                     this.variantCycleDates[dfuStr][partStr] = {
                         sos: sos || 'N/A',
-                        eos: eos || 'N/A'
+                        eos: eos || 'N/A',
+                        comments: comments || ''
                     };
                     processedCount++;
                 }
@@ -1451,6 +1456,7 @@ class DemandTransferApp {
                                                                             <div class="mt-1 text-xs space-y-0.5">
                                                                                 <p class="text-blue-600"><strong>SOS:</strong> ${cycleData.sos}</p>
                                                                                 <p class="text-red-600"><strong>EOS:</strong> ${cycleData.eos}</p>
+                                                                                ${cycleData.comments ? `<p class="text-gray-600 italic"><strong>Comments:</strong> ${cycleData.comments}</p>` : ''}
                                                                             </div>
                                                                         `;
                                                                     }
