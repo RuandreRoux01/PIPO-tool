@@ -1,14 +1,6 @@
-const cycleFileInput = document.getElementById('cycleFileInput');
-        if (cycleFileInput) {
-            cycleFileInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    this.loadVariantCycleData(file);
-                }
-            });
-        }// DFU Demand Transfer Management Application
-// Version: 2.14.0 - Build: 2025-08-05-fix-zero-variants
-// Fixed zero variants display by preserving original variants list
+// DFU Demand Transfer Management Application
+// Version: 2.18.0 - Build: 2025-08-05-scrolling-fix
+// Fixed DFU list scrolling and Calendar.week date format
 
 class DemandTransferApp {
     constructor() {
@@ -30,15 +22,22 @@ class DemandTransferApp {
         this.variantCycleDates = {}; // Store SOS/EOS data: { dfuCode: { partCode: { sos: date, eos: date } } }
         this.hasVariantCycleData = false; // Flag to check if cycle data is loaded
         this.keepZeroVariants = true; // Flag to keep variants with 0 demand visible
+        this.searchDebounceTimer = null; // Debounce timer for search input
         
         this.init();
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.14.0 - Build: 2025-08-05-fix-zero-variants');
-        console.log('📋 Fixed zero variants display by preserving original variants list');
+        console.log('🚀 DFU Demand Transfer App v2.18.0 - Build: 2025-08-05-scrolling-fix');
+        console.log('📋 Fixed DFU list scrolling and Calendar.week date format');
         this.render();
         this.attachEventListeners();
+    }
+    
+    // Helper method to ensure consistent string comparison
+    toComparableString(value) {
+        if (value === null || value === undefined) return '';
+        return String(value).trim();
     }
     
     showNotification(message, type = 'success') {
@@ -148,8 +147,8 @@ class DemandTransferApp {
                 
                 if (dfuCode && partCode) {
                     // Ensure both are strings for consistent comparison
-                    const dfuStr = dfuCode.toString().trim();
-                    const partStr = partCode.toString().trim();
+                    const dfuStr = this.toComparableString(dfuCode);
+                    const partStr = this.toComparableString(partCode);
                     
                     if (!this.variantCycleDates[dfuStr]) {
                         this.variantCycleDates[dfuStr] = {};
@@ -172,8 +171,8 @@ class DemandTransferApp {
     
     getCycleDataForVariant(dfuCode, partCode) {
         // Ensure both are strings for consistent comparison
-        const dfuStr = dfuCode ? dfuCode.toString().trim() : '';
-        const partStr = partCode ? partCode.toString().trim() : '';
+        const dfuStr = this.toComparableString(dfuCode);
+        const partStr = this.toComparableString(partCode);
         
         if (this.variantCycleDates[dfuStr] && this.variantCycleDates[dfuStr][partStr]) {
             return this.variantCycleDates[dfuStr][partStr];
@@ -235,6 +234,14 @@ class DemandTransferApp {
             if (data.length > 0) {
                 console.log('Sample record:', data[0]);
                 console.log('Available columns:', Object.keys(data[0]));
+                
+                // Log data types for debugging
+                const sampleRow = data[0];
+                console.log('Data types in first row:');
+                Object.keys(sampleRow).forEach(key => {
+                    console.log(`  ${key}: ${typeof sampleRow[key]} (${sampleRow[key]})`);
+                });
+                
                 this.rawData = data;
                 // Create a deep copy of the original data for undo functionality
                 this.originalRawData = JSON.parse(JSON.stringify(data));
@@ -301,14 +308,14 @@ class DemandTransferApp {
         }
         
         // Extract unique plant locations for filtering
-        this.availablePlantLocations = [...new Set(data.map(record => record[plantLocationColumn]))].filter(Boolean).sort();
+        this.availablePlantLocations = [...new Set(data.map(record => this.toComparableString(record[plantLocationColumn])))].filter(Boolean).sort();
         console.log('Available Plant Locations:', this.availablePlantLocations);
         
         const groupedByDFU = {};
         
         // Filter data by plant location if selected
         const filteredData = this.selectedPlantLocation ? 
-            data.filter(record => record[plantLocationColumn] && record[plantLocationColumn].toString() === this.selectedPlantLocation.toString()) : 
+            data.filter(record => this.toComparableString(record[plantLocationColumn]) === this.selectedPlantLocation) : 
             data;
             
         console.log('Total data records:', data.length);
@@ -319,7 +326,7 @@ class DemandTransferApp {
         }
         
         filteredData.forEach(record => {
-            const dfuCode = record[dfuColumn];
+            const dfuCode = this.toComparableString(record[dfuColumn]);
             if (dfuCode) {
                 if (!groupedByDFU[dfuCode]) {
                     groupedByDFU[dfuCode] = [];
@@ -337,7 +344,7 @@ class DemandTransferApp {
             const records = groupedByDFU[dfuCode];
             
             // Get unique part codes, ensuring we treat them as strings for consistency
-            const uniquePartCodes = [...new Set(records.map(r => r[partNumberColumn].toString()))].filter(Boolean);
+            const uniquePartCodes = [...new Set(records.map(r => this.toComparableString(r[partNumberColumn])))].filter(Boolean);
             
             // Check if this DFU has completed transfers
             const isCompleted = this.completedTransfers[dfuCode];
@@ -348,7 +355,7 @@ class DemandTransferApp {
                 
                 uniquePartCodes.forEach(partCode => {
                     // Filter records for this part code, ensuring string comparison
-                    const partCodeRecords = records.filter(r => r[partNumberColumn].toString() === partCode);
+                    const partCodeRecords = records.filter(r => this.toComparableString(r[partNumberColumn]) === partCode);
                     
                     // Sum up all demand for this variant across all records
                     const totalDemand = partCodeRecords.reduce((sum, r) => {
@@ -364,9 +371,9 @@ class DemandTransferApp {
                         // Group records by week for granular control
                         const weeklyRecords = {};
                         partCodeRecords.forEach(record => {
-                            const weekNum = record[weekNumberColumn];
+                            const weekNum = this.toComparableString(record[weekNumberColumn]);
                             const demand = parseFloat(record[demandColumn]) || 0;
-                            const sourceLocation = record[sourceLocationColumn];
+                            const sourceLocation = this.toComparableString(record[sourceLocationColumn]);
                             
                             const weekKey = `${weekNum}-${sourceLocation}`;
                             if (!weeklyRecords[weekKey]) {
@@ -410,7 +417,7 @@ class DemandTransferApp {
                         weekNumberColumn,
                         isCompleted: !!isCompleted,
                         completionInfo: isCompleted || null,
-                        plantLocation: records[0] ? records[0][plantLocationColumn] : null
+                        plantLocation: records[0] ? this.toComparableString(records[0][plantLocationColumn]) : null
                     };
                     
                     console.log(`DFU ${dfuCode} variants after processing:`, activeVariants.map(v => ({
@@ -438,10 +445,11 @@ class DemandTransferApp {
     filterDFUs() {
         if (this.searchTerm) {
             const filtered = {};
+            const searchLower = this.searchTerm.toLowerCase();
             Object.keys(this.multiVariantDFUs).forEach(dfuCode => {
-                if (dfuCode.toLowerCase().includes(this.searchTerm.toLowerCase()) ||
+                if (dfuCode.toLowerCase().includes(searchLower) ||
                     this.multiVariantDFUs[dfuCode].variants.some(v => 
-                        v.toString().toLowerCase().includes(this.searchTerm.toLowerCase()))) {
+                        v.toLowerCase().includes(searchLower))) {
                     filtered[dfuCode] = this.multiVariantDFUs[dfuCode];
                 }
             });
@@ -450,6 +458,16 @@ class DemandTransferApp {
             this.filteredDFUs = this.multiVariantDFUs;
         }
         this.render();
+        
+        // Restore focus to search input after render
+        setTimeout(() => {
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.focus();
+                // Move cursor to end of input
+                searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
+            }
+        }, 10);
     }
     
     filterByPlantLocation(plantLocation) {
@@ -466,26 +484,34 @@ class DemandTransferApp {
     }
     
     selectDFU(dfuCode) {
-        this.selectedDFU = dfuCode;
+        // Ensure consistent type
+        this.selectedDFU = this.toComparableString(dfuCode);
         this.render();
     }
     
     selectBulkTarget(dfuCode, targetVariant) {
-        this.bulkTransfers[dfuCode] = targetVariant;
+        const dfuStr = this.toComparableString(dfuCode);
+        const targetStr = this.toComparableString(targetVariant);
+        
+        this.bulkTransfers[dfuStr] = targetStr;
         // Clear individual transfers when bulk transfer is selected
-        this.transfers[dfuCode] = {};
+        this.transfers[dfuStr] = {};
         this.render();
     }
     
     setIndividualTransfer(dfuCode, sourceVariant, targetVariant) {
-        if (!this.transfers[dfuCode]) {
-            this.transfers[dfuCode] = {};
+        const dfuStr = this.toComparableString(dfuCode);
+        const sourceStr = this.toComparableString(sourceVariant);
+        const targetStr = this.toComparableString(targetVariant);
+        
+        if (!this.transfers[dfuStr]) {
+            this.transfers[dfuStr] = {};
         }
-        this.transfers[dfuCode][sourceVariant] = targetVariant;
+        this.transfers[dfuStr][sourceStr] = targetStr;
         
         // Clear granular transfers when setting individual transfer
-        if (this.granularTransfers[dfuCode] && this.granularTransfers[dfuCode][sourceVariant]) {
-            delete this.granularTransfers[dfuCode][sourceVariant];
+        if (this.granularTransfers[dfuStr] && this.granularTransfers[dfuStr][sourceStr]) {
+            delete this.granularTransfers[dfuStr][sourceStr];
         }
         
         // Don't render immediately - let the caller handle it to preserve scroll
@@ -495,30 +521,34 @@ class DemandTransferApp {
     }
     
     toggleGranularWeek(dfuCode, sourceVariant, targetVariant, weekKey) {
-        if (!this.granularTransfers[dfuCode]) {
-            this.granularTransfers[dfuCode] = {};
+        const dfuStr = this.toComparableString(dfuCode);
+        const sourceStr = this.toComparableString(sourceVariant);
+        const targetStr = this.toComparableString(targetVariant);
+        
+        if (!this.granularTransfers[dfuStr]) {
+            this.granularTransfers[dfuStr] = {};
         }
-        if (!this.granularTransfers[dfuCode][sourceVariant]) {
-            this.granularTransfers[dfuCode][sourceVariant] = {};
+        if (!this.granularTransfers[dfuStr][sourceStr]) {
+            this.granularTransfers[dfuStr][sourceStr] = {};
         }
-        if (!this.granularTransfers[dfuCode][sourceVariant][targetVariant]) {
-            this.granularTransfers[dfuCode][sourceVariant][targetVariant] = {};
+        if (!this.granularTransfers[dfuStr][sourceStr][targetStr]) {
+            this.granularTransfers[dfuStr][sourceStr][targetStr] = {};
         }
         
         // Toggle selection
-        const current = this.granularTransfers[dfuCode][sourceVariant][targetVariant][weekKey];
+        const current = this.granularTransfers[dfuStr][sourceStr][targetStr][weekKey];
         if (current && current.selected) {
-            delete this.granularTransfers[dfuCode][sourceVariant][targetVariant][weekKey];
+            delete this.granularTransfers[dfuStr][sourceStr][targetStr][weekKey];
         } else {
-            this.granularTransfers[dfuCode][sourceVariant][targetVariant][weekKey] = {
+            this.granularTransfers[dfuStr][sourceStr][targetStr][weekKey] = {
                 selected: true,
                 customQuantity: null // null means use full quantity
             };
         }
         
         // Clear individual transfer when granular is used
-        if (this.transfers[dfuCode] && this.transfers[dfuCode][sourceVariant]) {
-            delete this.transfers[dfuCode][sourceVariant];
+        if (this.transfers[dfuStr] && this.transfers[dfuStr][sourceStr]) {
+            delete this.transfers[dfuStr][sourceStr];
         }
         
         // Update UI without full re-render to preserve scroll position
@@ -526,12 +556,16 @@ class DemandTransferApp {
     }
     
     updateGranularQuantity(dfuCode, sourceVariant, targetVariant, weekKey, quantity) {
-        if (this.granularTransfers[dfuCode] && 
-            this.granularTransfers[dfuCode][sourceVariant] && 
-            this.granularTransfers[dfuCode][sourceVariant][targetVariant] && 
-            this.granularTransfers[dfuCode][sourceVariant][targetVariant][weekKey]) {
+        const dfuStr = this.toComparableString(dfuCode);
+        const sourceStr = this.toComparableString(sourceVariant);
+        const targetStr = this.toComparableString(targetVariant);
+        
+        if (this.granularTransfers[dfuStr] && 
+            this.granularTransfers[dfuStr][sourceStr] && 
+            this.granularTransfers[dfuStr][sourceStr][targetStr] && 
+            this.granularTransfers[dfuStr][sourceStr][targetStr][weekKey]) {
             
-            this.granularTransfers[dfuCode][sourceVariant][targetVariant][weekKey].customQuantity = 
+            this.granularTransfers[dfuStr][sourceStr][targetStr][weekKey].customQuantity = 
                 quantity === '' ? null : parseFloat(quantity);
             
             // Update action buttons only
@@ -633,14 +667,15 @@ class DemandTransferApp {
     }
     
     executeTransfer(dfuCode) {
-        const dfuData = this.multiVariantDFUs[dfuCode];
-        const { dfuColumn, partNumberColumn, demandColumn, calendarWeekColumn, sourceLocationColumn } = dfuData;
+        const dfuStr = this.toComparableString(dfuCode);
+        const dfuData = this.multiVariantDFUs[dfuStr];
+        const { dfuColumn, partNumberColumn, demandColumn, calendarWeekColumn, sourceLocationColumn, weekNumberColumn } = dfuData;
         
         // IMPORTANT: Store all original variants BEFORE any modifications
         const originalVariants = new Set();
-        const dfuRecords = this.rawData.filter(record => record[dfuColumn] === dfuCode);
+        const dfuRecords = this.rawData.filter(record => this.toComparableString(record[dfuColumn]) === dfuStr);
         dfuRecords.forEach(record => {
-            originalVariants.add(record[partNumberColumn].toString());
+            originalVariants.add(this.toComparableString(record[partNumberColumn]));
         });
         console.log('Original variants before transfer:', Array.from(originalVariants));
         
@@ -660,22 +695,22 @@ class DemandTransferApp {
         let executionDetails = '';
         
         // Handle bulk transfer
-        if (this.bulkTransfers[dfuCode]) {
-            const targetVariant = this.bulkTransfers[dfuCode];
-            const dfuRecords = this.rawData.filter(record => record[dfuColumn] === dfuCode);
+        if (this.bulkTransfers[dfuStr]) {
+            const targetVariant = this.bulkTransfers[dfuStr];
             
-            console.log(`Executing bulk transfer for DFU ${dfuCode} to ${targetVariant}`);
+            console.log(`Executing bulk transfer for DFU ${dfuStr} to ${targetVariant}`);
             console.log(`Found ${dfuRecords.length} records for this DFU`);
             
             dfuRecords.forEach(record => {
-                if (record[partNumberColumn].toString() !== targetVariant.toString()) {
-                    const sourceVariant = record[partNumberColumn];
+                const recordPartNumber = this.toComparableString(record[partNumberColumn]);
+                if (recordPartNumber !== targetVariant) {
+                    const sourceVariant = recordPartNumber;
                     const transferDemand = parseFloat(record[demandColumn]) || 0;
                     
                     const targetRecord = dfuRecords.find(r => 
-                        r[partNumberColumn].toString() === targetVariant.toString() && 
-                        r[calendarWeekColumn] === record[calendarWeekColumn] &&
-                        r[sourceLocationColumn] === record[sourceLocationColumn]
+                        this.toComparableString(r[partNumberColumn]) === targetVariant && 
+                        this.toComparableString(r[calendarWeekColumn]) === this.toComparableString(record[calendarWeekColumn]) &&
+                        this.toComparableString(r[sourceLocationColumn]) === this.toComparableString(record[sourceLocationColumn])
                     );
                     
                     if (targetRecord) {
@@ -700,8 +735,8 @@ class DemandTransferApp {
                         });
                     } else {
                         // Change the source record to target variant
-                        const originalVariant = record[partNumberColumn];
-                        record[partNumberColumn] = targetVariant;
+                        const originalVariant = recordPartNumber;
+                        record[partNumberColumn] = isNaN(targetVariant) ? targetVariant : Number(targetVariant);
                         
                         // Add transfer history
                         record['Transfer History'] = `PIPO [${originalVariant} → ${transferDemand} @ ${timestamp}]`;
@@ -718,10 +753,10 @@ class DemandTransferApp {
                 }
             });
             
-            delete this.bulkTransfers[dfuCode];
+            delete this.bulkTransfers[dfuStr];
             
             // Mark as completed transfer
-            this.completedTransfers[dfuCode] = {
+            this.completedTransfers[dfuStr] = {
                 type: 'bulk',
                 targetVariant: targetVariant,
                 timestamp: timestamp,
@@ -733,15 +768,14 @@ class DemandTransferApp {
             executionMessage = `${dfuData.variants.length - 1} variants transferred to ${targetVariant}`;
             executionDetails = `<p>All variants consolidated into: <strong>${targetVariant}</strong></p>`;
             
-            this.showNotification(`Bulk transfer completed for DFU ${dfuCode}: ${executionMessage}`);
+            this.showNotification(`Bulk transfer completed for DFU ${dfuStr}: ${executionMessage}`);
         }
         
         // Handle individual transfers
-        else if (this.transfers[dfuCode] && Object.keys(this.transfers[dfuCode]).length > 0) {
-            const individualTransfers = this.transfers[dfuCode];
-            const dfuRecords = this.rawData.filter(record => record[dfuColumn] === dfuCode);
+        else if (this.transfers[dfuStr] && Object.keys(this.transfers[dfuStr]).length > 0) {
+            const individualTransfers = this.transfers[dfuStr];
             
-            console.log(`Executing individual transfers for DFU ${dfuCode}`);
+            console.log(`Executing individual transfers for DFU ${dfuStr}`);
             console.log(`Individual transfers:`, individualTransfers);
             console.log(`Found ${dfuRecords.length} records for this DFU`);
             
@@ -755,7 +789,7 @@ class DemandTransferApp {
                 if (sourceVariant !== targetVariant) {
                     // Find all records for this source variant
                     const sourceRecords = dfuRecords.filter(r => 
-                        r[partNumberColumn].toString() === sourceVariant.toString()
+                        this.toComparableString(r[partNumberColumn]) === sourceVariant
                     );
                     
                     console.log(`Found ${sourceRecords.length} records for source variant ${sourceVariant}`);
@@ -765,9 +799,9 @@ class DemandTransferApp {
                         
                         // Try to find a matching target record with same week and location
                         const targetRecord = dfuRecords.find(r => 
-                            r[partNumberColumn].toString() === targetVariant.toString() && 
-                            r[calendarWeekColumn] === record[calendarWeekColumn] &&
-                            r[sourceLocationColumn] === record[sourceLocationColumn]
+                            this.toComparableString(r[partNumberColumn]) === targetVariant && 
+                            this.toComparableString(r[calendarWeekColumn]) === this.toComparableString(record[calendarWeekColumn]) &&
+                            this.toComparableString(r[sourceLocationColumn]) === this.toComparableString(record[sourceLocationColumn])
                         );
                         
                         if (targetRecord) {
@@ -786,8 +820,8 @@ class DemandTransferApp {
                             console.log(`Added ${transferDemand} demand to existing target record`);
                         } else {
                             // Change the source record to target variant
-                            const originalVariant = record[partNumberColumn];
-                            record[partNumberColumn] = targetVariant;
+                            const originalVariant = this.toComparableString(record[partNumberColumn]);
+                            record[partNumberColumn] = isNaN(targetVariant) ? targetVariant : Number(targetVariant);
                             
                             // Add transfer history
                             record['Transfer History'] = `PIPO [${originalVariant} → ${transferDemand} @ ${timestamp}]`;
@@ -807,10 +841,10 @@ class DemandTransferApp {
                 }
             });
             
-            this.transfers[dfuCode] = {};
+            this.transfers[dfuStr] = {};
             
             // Mark as completed transfer
-            this.completedTransfers[dfuCode] = {
+            this.completedTransfers[dfuStr] = {
                 type: 'individual',
                 transfers: individualTransfers,
                 timestamp: timestamp,
@@ -826,21 +860,17 @@ class DemandTransferApp {
                 ).filter(Boolean).join('')}
             </ul>`;
             
-            this.showNotification(`Individual transfers completed for DFU ${dfuCode}: ${executionMessage}`);
+            this.showNotification(`Individual transfers completed for DFU ${dfuStr}: ${executionMessage}`);
         }
         
         // Handle granular transfers
-        else if (this.granularTransfers[dfuCode] && Object.keys(this.granularTransfers[dfuCode]).length > 0) {
-            const granularTransfers = this.granularTransfers[dfuCode];
-            const dfuRecords = this.rawData.filter(record => record[dfuColumn] === dfuCode);
+        else if (this.granularTransfers[dfuStr] && Object.keys(this.granularTransfers[dfuStr]).length > 0) {
+            const granularTransfers = this.granularTransfers[dfuStr];
             
-            console.log(`Executing granular transfers for DFU ${dfuCode}`);
+            console.log(`Executing granular transfers for DFU ${dfuStr}`);
             console.log(`Granular transfers:`, granularTransfers);
             
             let granularTransferCount = 0;
-            
-            // Get column info for granular transfers
-            const { weekNumberColumn } = dfuData;
             
             // Process each source variant's granular transfers
             Object.keys(granularTransfers).forEach(sourceVariant => {
@@ -857,9 +887,9 @@ class DemandTransferApp {
                         
                         // Find the specific source record for this week and location
                         const sourceRecord = dfuRecords.find(r => 
-                            r[partNumberColumn].toString() === sourceVariant.toString() &&
-                            r[weekNumberColumn].toString() === weekNumber.toString() &&
-                            r[sourceLocationColumn].toString() === sourceLocation.toString()
+                            this.toComparableString(r[partNumberColumn]) === sourceVariant &&
+                            this.toComparableString(r[weekNumberColumn]) === weekNumber &&
+                            this.toComparableString(r[sourceLocationColumn]) === sourceLocation
                         );
                         
                         if (sourceRecord) {
@@ -871,9 +901,9 @@ class DemandTransferApp {
                             
                             // Find matching target record
                             const targetRecord = dfuRecords.find(r => 
-                                r[partNumberColumn].toString() === targetVariant.toString() && 
-                                r[weekNumberColumn].toString() === weekNumber.toString() &&
-                                r[sourceLocationColumn].toString() === sourceLocation.toString()
+                                this.toComparableString(r[partNumberColumn]) === targetVariant && 
+                                this.toComparableString(r[weekNumberColumn]) === weekNumber &&
+                                this.toComparableString(r[sourceLocationColumn]) === sourceLocation
                             );
                             
                             if (targetRecord) {
@@ -904,13 +934,13 @@ class DemandTransferApp {
                                 // Create new record by modifying source
                                 if (transferAmount === originalDemand) {
                                     // Transfer full amount - change part number
-                                    const originalVariant = sourceRecord[partNumberColumn];
-                                    sourceRecord[partNumberColumn] = targetVariant;
+                                    const originalVariant = this.toComparableString(sourceRecord[partNumberColumn]);
+                                    sourceRecord[partNumberColumn] = isNaN(targetVariant) ? targetVariant : Number(targetVariant);
                                     sourceRecord['Transfer History'] = `PIPO [W${weekNumber} ${originalVariant} → ${transferAmount} @ ${timestamp}]`;
                                 } else {
                                     // Partial transfer - need to create new record and update source
                                     const newRecord = { ...sourceRecord };
-                                    newRecord[partNumberColumn] = targetVariant;
+                                    newRecord[partNumberColumn] = isNaN(targetVariant) ? targetVariant : Number(targetVariant);
                                     newRecord[demandColumn] = transferAmount;
                                     newRecord['Transfer History'] = `PIPO [W${weekNumber} ${sourceVariant} → ${transferAmount} @ ${timestamp}]`;
                                     
@@ -943,10 +973,10 @@ class DemandTransferApp {
                 });
             });
             
-            this.granularTransfers[dfuCode] = {};
+            this.granularTransfers[dfuStr] = {};
             
             // Mark as completed transfer
-            this.completedTransfers[dfuCode] = {
+            this.completedTransfers[dfuStr] = {
                 type: 'granular',
                 timestamp: timestamp,
                 transferCount: granularTransferCount,
@@ -957,11 +987,11 @@ class DemandTransferApp {
             executionMessage = `${granularTransferCount} week-level transfers executed`;
             executionDetails = `<p>Specific weeks transferred between variants</p>`;
             
-            this.showNotification(`Granular transfers completed for DFU ${dfuCode}: ${executionMessage}`);
+            this.showNotification(`Granular transfers completed for DFU ${dfuStr}: ${executionMessage}`);
         }
 
         // Store execution summary
-        this.lastExecutionSummary[dfuCode] = {
+        this.lastExecutionSummary[dfuStr] = {
             type: executionType,
             timestamp: timestamp,
             message: executionMessage,
@@ -970,7 +1000,7 @@ class DemandTransferApp {
 
         // CRITICAL: Consolidate records FIRST before recalculating UI data
         console.log('Step 1: Consolidating records...');
-        this.consolidateRecords(dfuCode, originalVariants);
+        this.consolidateRecords(dfuStr, originalVariants);
         
         // THEN clear cached data and recalculate
         console.log('Step 2: Clearing cached data...');
@@ -1006,10 +1036,11 @@ class DemandTransferApp {
     }
     
     consolidateRecords(dfuCode, originalVariants = null) {
-        console.log(`Consolidating records for DFU ${dfuCode}`);
+        const dfuStr = this.toComparableString(dfuCode);
+        console.log(`Consolidating records for DFU ${dfuStr}`);
         
         // Get the column information from the current DFU data
-        const currentDFUData = this.multiVariantDFUs[dfuCode] || Object.values(this.multiVariantDFUs)[0];
+        const currentDFUData = this.multiVariantDFUs[dfuStr] || Object.values(this.multiVariantDFUs)[0];
         if (!currentDFUData) {
             console.error('No DFU data available for consolidation');
             return;
@@ -1019,15 +1050,15 @@ class DemandTransferApp {
         
         // Get all records for this DFU
         const allRecords = this.rawData;
-        const dfuRecords = allRecords.filter(record => record[dfuColumn] === dfuCode);
+        const dfuRecords = allRecords.filter(record => this.toComparableString(record[dfuColumn]) === dfuStr);
         
-        console.log(`Found ${dfuRecords.length} records for DFU ${dfuCode} before consolidation`);
+        console.log(`Found ${dfuRecords.length} records for DFU ${dfuStr} before consolidation`);
         
         // Use provided original variants or extract from current records
         const allPartNumbers = originalVariants || new Set();
         if (!originalVariants) {
             dfuRecords.forEach(record => {
-                allPartNumbers.add(record[partNumberColumn].toString());
+                allPartNumbers.add(this.toComparableString(record[partNumberColumn]));
             });
         }
         console.log('All part numbers to preserve:', Array.from(allPartNumbers));
@@ -1036,10 +1067,10 @@ class DemandTransferApp {
         const consolidatedMap = new Map();
         
         dfuRecords.forEach((record) => {
-            const partNumber = record[partNumberColumn].toString();
-            const calendarWeek = record[calendarWeekColumn];
-            const weekNumber = record[weekNumberColumn];
-            const sourceLocation = record[sourceLocationColumn];
+            const partNumber = this.toComparableString(record[partNumberColumn]);
+            const calendarWeek = this.toComparableString(record[calendarWeekColumn]);
+            const weekNumber = this.toComparableString(record[weekNumberColumn]);
+            const sourceLocation = this.toComparableString(record[sourceLocationColumn]);
             const demand = parseFloat(record[demandColumn]) || 0;
             const transferHistory = record['Transfer History'] || '';
             
@@ -1084,15 +1115,16 @@ class DemandTransferApp {
                 // If no record exists for this part number, create one with 0 demand
                 if (!hasRecord) {
                     // Use the first record as a template
-                    const templateRecord = dfuRecords.find(r => r[partNumberColumn].toString() === partNumber) || dfuRecords[0];
+                    const templateRecord = dfuRecords.find(r => this.toComparableString(r[partNumberColumn]) === partNumber) || dfuRecords[0];
                     if (templateRecord) {
                         const zeroRecord = { ...templateRecord };
-                        zeroRecord[partNumberColumn] = partNumber;
+                        // Preserve the original data type for Product Number
+                        zeroRecord[partNumberColumn] = isNaN(partNumber) ? partNumber : Number(partNumber);
                         zeroRecord[demandColumn] = 0;
                         zeroRecord['Transfer History'] = 'All demand transferred';
                         
                         // Create a key for the first week/location
-                        const key = `${partNumber}|${zeroRecord[weekNumberColumn]}|${zeroRecord[sourceLocationColumn]}`;
+                        const key = `${partNumber}|${this.toComparableString(zeroRecord[weekNumberColumn])}|${this.toComparableString(zeroRecord[sourceLocationColumn])}`;
                         consolidatedMap.set(key, zeroRecord);
                         
                         console.log(`Created zero-demand record for ${partNumber} to keep variant visible`);
@@ -1104,20 +1136,20 @@ class DemandTransferApp {
         console.log(`Consolidated into ${consolidatedMap.size} unique records`);
         
         // Remove old DFU records from rawData
-        this.rawData = this.rawData.filter(record => record[dfuColumn] !== dfuCode);
+        this.rawData = this.rawData.filter(record => this.toComparableString(record[dfuColumn]) !== dfuStr);
         
         // Add consolidated records back to rawData
         consolidatedMap.forEach((record) => {
             this.rawData.push(record);
         });
         
-        const newDfuRecords = this.rawData.filter(record => record[dfuColumn] === dfuCode);
-        console.log(`After consolidation: ${newDfuRecords.length} records for DFU ${dfuCode}`);
+        const newDfuRecords = this.rawData.filter(record => this.toComparableString(record[dfuColumn]) === dfuStr);
+        console.log(`After consolidation: ${newDfuRecords.length} records for DFU ${dfuStr}`);
         
         // Log the consolidated variants
         const variantSummary = {};
         newDfuRecords.forEach(record => {
-            const partNumber = record[partNumberColumn].toString();
+            const partNumber = this.toComparableString(record[partNumberColumn]);
             const demand = parseFloat(record[demandColumn]) || 0;
             
             if (!variantSummary[partNumber]) {
@@ -1127,7 +1159,7 @@ class DemandTransferApp {
             variantSummary[partNumber].recordCount += 1;
         });
         
-        console.log(`DFU ${dfuCode} variant summary after consolidation:`, variantSummary);
+        console.log(`DFU ${dfuStr} variant summary after consolidation:`, variantSummary);
     }
     
     forceUIRefresh() {
@@ -1153,25 +1185,27 @@ class DemandTransferApp {
     }
     
     cancelTransfer(dfuCode) {
-        delete this.transfers[dfuCode];
-        delete this.bulkTransfers[dfuCode];
-        delete this.granularTransfers[dfuCode];
+        const dfuStr = this.toComparableString(dfuCode);
+        delete this.transfers[dfuStr];
+        delete this.bulkTransfers[dfuStr];
+        delete this.granularTransfers[dfuStr];
         this.render();
     }
     
     undoTransfer(dfuCode) {
-        console.log(`Undoing transfer for DFU ${dfuCode}`);
+        const dfuStr = this.toComparableString(dfuCode);
+        console.log(`Undoing transfer for DFU ${dfuStr}`);
         
         // Remove from completed transfers
-        delete this.completedTransfers[dfuCode];
+        delete this.completedTransfers[dfuStr];
         
         // Clear any current transfer settings
-        delete this.transfers[dfuCode];
-        delete this.bulkTransfers[dfuCode];
-        delete this.granularTransfers[dfuCode];
+        delete this.transfers[dfuStr];
+        delete this.bulkTransfers[dfuStr];
+        delete this.granularTransfers[dfuStr];
         
         // Clear execution summary
-        delete this.lastExecutionSummary[dfuCode];
+        delete this.lastExecutionSummary[dfuStr];
         
         // Restore the original data from backup
         console.log('Restoring original data from backup...');
@@ -1184,14 +1218,38 @@ class DemandTransferApp {
         // Re-process the data to show the variants again with original quantities
         this.processMultiVariantDFUs(this.rawData);
         
-        this.showNotification(`Transfer undone for DFU ${dfuCode}. Original data restored with all variants and quantities.`, 'success');
+        this.showNotification(`Transfer undone for DFU ${dfuStr}. Original data restored with all variants and quantities.`, 'success');
         this.render();
     }
     
     exportData() {
         try {
+            // Create a copy of the data with formatted dates
+            const formattedData = this.rawData.map(record => {
+                const formattedRecord = { ...record };
+                
+                // Format Calendar.week if it exists
+                if (formattedRecord['Calendar.week']) {
+                    // Convert the date string to just YYYY-MM-DD format
+                    const dateValue = formattedRecord['Calendar.week'];
+                    if (dateValue) {
+                        // Handle both Date objects and ISO strings
+                        const date = new Date(dateValue);
+                        if (!isNaN(date.getTime())) {
+                            // Format as YYYY-MM-DD
+                            const year = date.getFullYear();
+                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                            const day = String(date.getDate()).padStart(2, '0');
+                            formattedRecord['Calendar.week'] = `${year}-${month}-${day}`;
+                        }
+                    }
+                }
+                
+                return formattedRecord;
+            });
+            
             const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.json_to_sheet(this.rawData);
+            const ws = XLSX.utils.json_to_sheet(formattedData);
             XLSX.utils.book_append_sheet(wb, ws, 'Updated Demand');
             XLSX.writeFile(wb, 'Updated_Demand_Data.xlsx');
             this.showNotification('Data exported successfully');
@@ -1289,8 +1347,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.14.0</p>
-                            <p>Build: 2025-08-05-fix-zero-variants</p>
+                            <p>Version 2.18.0</p>
+                            <p>Build: 2025-08-05-scrolling-fix</p>
                         </div>
                     </div>
                 </div>
@@ -1312,7 +1370,7 @@ class DemandTransferApp {
                         <select class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" id="plantLocationFilter">
                             <option value="">All Plant Locations</option>
                             ${this.availablePlantLocations.map(location => `
-                                <option value="${location}" ${this.selectedPlantLocation === location.toString() ? 'selected' : ''}>
+                                <option value="${location}" ${this.selectedPlantLocation === location ? 'selected' : ''}>
                                     Plant ${location}
                                 </option>
                             `).join('')}
@@ -1350,10 +1408,10 @@ class DemandTransferApp {
                             </svg>
                             DFUs Requiring Review (${Object.keys(this.filteredDFUs).length})
                         </h3>
-                        <div class="relative">
+                        <div class="relative" style="height: 580px;">
                             <div class="absolute inset-x-0 top-0 h-4 bg-gradient-to-b from-gray-50 to-transparent pointer-events-none z-10"></div>
                             <div class="absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-gray-50 to-transparent pointer-events-none z-10"></div>
-                            <div class="space-y-2 max-h-[420px] overflow-y-auto pr-1 scrollbar-custom">
+                            <div class="space-y-2 h-full overflow-y-auto pr-1 scrollbar-custom" style="padding-top: 16px; padding-bottom: 16px;">>
                                 ${Object.keys(this.filteredDFUs).map(dfuCode => {
                                 const dfuData = this.filteredDFUs[dfuCode];
                                 if (!dfuData || !dfuData.variants) return '';
@@ -1364,7 +1422,7 @@ class DemandTransferApp {
                                             <div>
                                                 <h4 class="font-medium text-gray-800">DFU: ${dfuCode}</h4>
                                                 <p class="text-sm text-gray-600">
-                                                    ${dfuData.plantLocation ? `Plant ${dfuData.plantLocation} • ` : ''}${dfuData.isCompleted ? `1 variant (consolidated)` : `${dfuData.variants.length} variants`}
+                                                    ${dfuData.plantLocation ? `Plant ${dfuData.plantLocation} • ` : ''}${dfuData.variants.length} variant${dfuData.variants.length > 1 ? 's' : ''}${dfuData.isCompleted ? ' (transfer completed)' : ''}
                                                 </p>
                                             </div>
                                             <div class="text-right">
