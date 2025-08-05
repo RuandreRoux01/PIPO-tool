@@ -7,12 +7,13 @@ const cycleFileInput = document.getElementById('cycleFileInput');
                 }
             });
         }// DFU Demand Transfer Management Application
-// Version: 2.9.1 - Build: 2025-07-29-ui-improved
-// Fixed UI: Removed redundant header, added execution summary
+// Version: 2.14.0 - Build: 2025-08-05-fix-zero-variants
+// Fixed zero variants display by preserving original variants list
 
 class DemandTransferApp {
     constructor() {
         this.rawData = [];
+        this.originalRawData = []; // Backup of original data for undo functionality
         this.multiVariantDFUs = {};
         this.filteredDFUs = {};
         this.selectedDFU = null;
@@ -28,13 +29,14 @@ class DemandTransferApp {
         this.lastExecutionSummary = {}; // Store last execution summary for display
         this.variantCycleDates = {}; // Store SOS/EOS data: { dfuCode: { partCode: { sos: date, eos: date } } }
         this.hasVariantCycleData = false; // Flag to check if cycle data is loaded
+        this.keepZeroVariants = true; // Flag to keep variants with 0 demand visible
         
         this.init();
     }
     
     init() {
-        console.log('🚀 DFU Demand Transfer App v2.10.0 - Build: 2025-07-29-ui-improved');
-        console.log('📋 Fixed UI: Removed redundant header, added execution summary, added comments');
+        console.log('🚀 DFU Demand Transfer App v2.14.0 - Build: 2025-08-05-fix-zero-variants');
+        console.log('📋 Fixed zero variants display by preserving original variants list');
         this.render();
         this.attachEventListeners();
     }
@@ -234,6 +236,8 @@ class DemandTransferApp {
                 console.log('Sample record:', data[0]);
                 console.log('Available columns:', Object.keys(data[0]));
                 this.rawData = data;
+                // Create a deep copy of the original data for undo functionality
+                this.originalRawData = JSON.parse(JSON.stringify(data));
                 this.processMultiVariantDFUs(data);
                 this.isProcessed = true;
                 this.showNotification(`Successfully loaded ${data.length} records`);
@@ -355,7 +359,7 @@ class DemandTransferApp {
                     // Get part description from the first record
                     const partDescription = partCodeRecords[0] ? partCodeRecords[0][partDescriptionColumn] : '';
                     
-                    // Include all variants that have records
+                    // Include all variants that have records (including those with 0 demand)
                     if (partCodeRecords.length > 0) {
                         // Group records by week for granular control
                         const weeklyRecords = {};
@@ -389,7 +393,9 @@ class DemandTransferApp {
                 
                 // Always include DFUs that have completed transfers, even if they now have only one variant
                 const activeVariants = Object.keys(variantDemand);
-                if (activeVariants.length > 1 || isCompleted) {
+                
+                // For completed transfers or multi-variant DFUs, include all variants (even with 0 demand)
+                if (activeVariants.length > 1 || isCompleted || (isCompleted && this.keepZeroVariants)) {
                     multiVariants[dfuCode] = {
                         variants: activeVariants,
                         variantDemand,
@@ -413,9 +419,6 @@ class DemandTransferApp {
                         records: variantDemand[v].recordCount,
                         description: variantDemand[v].partDescription
                     })));
-                } else if (activeVariants.length === 1) {
-                    // If only one variant remains and no completion record, it's no longer multi-variant
-                    multiVariantCount--;
                 }
             }
         });
@@ -632,6 +635,14 @@ class DemandTransferApp {
     executeTransfer(dfuCode) {
         const dfuData = this.multiVariantDFUs[dfuCode];
         const { dfuColumn, partNumberColumn, demandColumn, calendarWeekColumn, sourceLocationColumn } = dfuData;
+        
+        // IMPORTANT: Store all original variants BEFORE any modifications
+        const originalVariants = new Set();
+        const dfuRecords = this.rawData.filter(record => record[dfuColumn] === dfuCode);
+        dfuRecords.forEach(record => {
+            originalVariants.add(record[partNumberColumn].toString());
+        });
+        console.log('Original variants before transfer:', Array.from(originalVariants));
         
         let transferCount = 0;
         const transferHistory = []; // Track all transfers for audit trail
@@ -959,7 +970,7 @@ class DemandTransferApp {
 
         // CRITICAL: Consolidate records FIRST before recalculating UI data
         console.log('Step 1: Consolidating records...');
-        this.consolidateRecords(dfuCode);
+        this.consolidateRecords(dfuCode, originalVariants);
         
         // THEN clear cached data and recalculate
         console.log('Step 2: Clearing cached data...');
@@ -994,7 +1005,7 @@ class DemandTransferApp {
         }, 300);
     }
     
-    consolidateRecords(dfuCode) {
+    consolidateRecords(dfuCode, originalVariants = null) {
         console.log(`Consolidating records for DFU ${dfuCode}`);
         
         // Get the column information from the current DFU data
@@ -1011,6 +1022,15 @@ class DemandTransferApp {
         const dfuRecords = allRecords.filter(record => record[dfuColumn] === dfuCode);
         
         console.log(`Found ${dfuRecords.length} records for DFU ${dfuCode} before consolidation`);
+        
+        // Use provided original variants or extract from current records
+        const allPartNumbers = originalVariants || new Set();
+        if (!originalVariants) {
+            dfuRecords.forEach(record => {
+                allPartNumbers.add(record[partNumberColumn].toString());
+            });
+        }
+        console.log('All part numbers to preserve:', Array.from(allPartNumbers));
         
         // Create a map of consolidated records
         const consolidatedMap = new Map();
@@ -1049,6 +1069,37 @@ class DemandTransferApp {
                 consolidatedMap.set(key, consolidatedRecord);
             }
         });
+        
+        // If keepZeroVariants is true, ensure all original part numbers have at least one record
+        if (this.keepZeroVariants) {
+            allPartNumbers.forEach(partNumber => {
+                // Check if this part number has any records in the consolidated map
+                let hasRecord = false;
+                consolidatedMap.forEach((record, key) => {
+                    if (key.startsWith(`${partNumber}|`)) {
+                        hasRecord = true;
+                    }
+                });
+                
+                // If no record exists for this part number, create one with 0 demand
+                if (!hasRecord) {
+                    // Use the first record as a template
+                    const templateRecord = dfuRecords.find(r => r[partNumberColumn].toString() === partNumber) || dfuRecords[0];
+                    if (templateRecord) {
+                        const zeroRecord = { ...templateRecord };
+                        zeroRecord[partNumberColumn] = partNumber;
+                        zeroRecord[demandColumn] = 0;
+                        zeroRecord['Transfer History'] = 'All demand transferred';
+                        
+                        // Create a key for the first week/location
+                        const key = `${partNumber}|${zeroRecord[weekNumberColumn]}|${zeroRecord[sourceLocationColumn]}`;
+                        consolidatedMap.set(key, zeroRecord);
+                        
+                        console.log(`Created zero-demand record for ${partNumber} to keep variant visible`);
+                    }
+                }
+            });
+        }
         
         console.log(`Consolidated into ${consolidatedMap.size} unique records`);
         
@@ -1122,14 +1173,18 @@ class DemandTransferApp {
         // Clear execution summary
         delete this.lastExecutionSummary[dfuCode];
         
+        // Restore the original data from backup
+        console.log('Restoring original data from backup...');
+        this.rawData = JSON.parse(JSON.stringify(this.originalRawData));
+        
         // Force recalculation of multi-variant DFUs
         this.multiVariantDFUs = {};
         this.filteredDFUs = {};
         
-        // Re-process the data to show the variants again
+        // Re-process the data to show the variants again with original quantities
         this.processMultiVariantDFUs(this.rawData);
         
-        this.showNotification(`Transfer undone for DFU ${dfuCode}. You can now make new transfers.`, 'success');
+        this.showNotification(`Transfer undone for DFU ${dfuCode}. Original data restored with all variants and quantities.`, 'success');
         this.render();
     }
     
@@ -1234,8 +1289,8 @@ class DemandTransferApp {
                             </p>
                         </div>
                         <div class="text-right text-xs text-gray-400">
-                            <p>Version 2.9.1</p>
-                            <p>Build: 2025-07-29-ui-improved</p>
+                            <p>Version 2.14.0</p>
+                            <p>Build: 2025-08-05-fix-zero-variants</p>
                         </div>
                     </div>
                 </div>
